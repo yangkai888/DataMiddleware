@@ -183,3 +183,22 @@ type APIKey struct {
 	ExpiresAt time.Time `json:"expires_at"`
 	IsActive  bool      `json:"is_active"`
 }
+
+// Cache 缓存接口
+type Cache interface {
+	// Get 获取缓存值
+	Get(key string) ([]byte, error)
+	// Set 设置缓存值
+	Set(key string, value []byte) error
+	// SetWithTTL 设置缓存值并指定TTL
+	SetWithTTL(key string, value []byte, ttl time.Duration) error
+	// Delete 删除缓存值
+	Delete(key string) error
+	// Exists 检查键是否存在
+	Exists(key string) bool
+	// Clear 清空缓存
+	Clear() error
+	// Close 关闭缓存
+	Close() error
+}
+

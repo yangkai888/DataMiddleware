@@ -95,13 +95,36 @@ type RedisConfig struct {
 
 // CacheConfig 缓存配置
 type CacheConfig struct {
-	Local LocalCacheConfig `mapstructure:"local" yaml:"local"`
+	// L1本地缓存配置
+	L1 CacheConfigL1 `mapstructure:"l1" yaml:"l1"`
+	// L2 Redis缓存配置
+	L2 CacheConfigL2 `mapstructure:"l2" yaml:"l2"`
 }
 
-// LocalCacheConfig 本地缓存配置
-type LocalCacheConfig struct {
-	Size int `mapstructure:"size" yaml:"size"`
-	TTL  int `mapstructure:"ttl" yaml:"ttl"`
+// CacheConfigL1 L1本地缓存配置
+type CacheConfigL1 struct {
+	Enabled           bool          `mapstructure:"enabled" yaml:"enabled"`
+	Shards            int           `mapstructure:"shards" yaml:"shards"`
+	LifeWindow        time.Duration `mapstructure:"life_window" yaml:"life_window"`
+	CleanWindow       time.Duration `mapstructure:"clean_window" yaml:"clean_window"`
+	MaxEntriesInWindow int          `mapstructure:"max_entries_in_window" yaml:"max_entries_in_window"`
+	MaxEntrySize      int           `mapstructure:"max_entry_size" yaml:"max_entry_size"`
+	Verbose           bool          `mapstructure:"verbose" yaml:"verbose"`
+	HardMaxCacheSize  int           `mapstructure:"hard_max_cache_size" yaml:"hard_max_cache_size"`
+}
+
+// CacheConfigL2 L2 Redis缓存配置
+type CacheConfigL2 struct {
+	Enabled     bool          `mapstructure:"enabled" yaml:"enabled"`
+	Host        string        `mapstructure:"host" yaml:"host"`
+	Port        int           `mapstructure:"port" yaml:"port"`
+	Password    string        `mapstructure:"password" yaml:"password"`
+	DB          int           `mapstructure:"db" yaml:"db"`
+	PoolSize    int           `mapstructure:"pool_size" yaml:"pool_size"`
+	MinIdleConn int           `mapstructure:"min_idle_conn" yaml:"min_idle_conn"`
+	DialTimeout time.Duration `mapstructure:"dial_timeout" yaml:"dial_timeout"`
+	ReadTimeout time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
+	WriteTimeout time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
 }
 
 // JWTConfig JWT配置

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"errors"
 	"time"
 )
 
@@ -133,3 +134,11 @@ type Handler interface {
 type Middleware interface {
 	Process(connID string, msg *Message) (*Message, error)
 }
+
+// 缓存相关错误
+var (
+	// ErrCacheDisabled 缓存未启用
+	ErrCacheDisabled = errors.New("cache disabled")
+	// ErrCacheMiss 缓存未命中
+	ErrCacheMiss = errors.New("cache miss")
+)

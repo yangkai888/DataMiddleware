@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"datamiddleware/internal/auth"
+	"datamiddleware/internal/cache"
 	"datamiddleware/internal/config"
 	"datamiddleware/internal/database"
 	"datamiddleware/internal/errors"
@@ -72,6 +73,13 @@ func main() {
 	jwtService := auth.NewJWTService(cfg.JWT, log)
 	_ = jwtService // TODO: 在后续功能中使用JWT服务
 
+	// 初始化缓存管理器
+	cacheManager, err := cache.NewManager(cfg.Cache, log)
+	if err != nil {
+		log.Error("缓存管理器初始化失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 初始化消息路由器
 	messageRouter := router.NewMessageRouter(log)
 
@@ -122,7 +130,10 @@ func main() {
 		log.Error("数据库关闭失败", "error", err)
 	}
 
-	// TODO: 关闭缓存连接
+	// 关闭缓存管理器
+	if err := cacheManager.Close(); err != nil {
+		log.Error("缓存管理器关闭失败", "error", err)
+	}
 
 	log.Info("数据中间件服务已关闭")
 }

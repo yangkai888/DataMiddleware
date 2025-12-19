@@ -71,11 +71,28 @@ redis:
   read_timeout: 3s
   write_timeout: 3s
 
-# 本地缓存配置
+# 缓存配置
 cache:
-  local:
-    size: 1000  # 最大缓存条目数
-    ttl: 3600   # 默认TTL(秒)
+  l1:  # L1本地缓存配置
+    enabled: true
+    shards: 1024
+    life_window: 10m
+    clean_window: 5m
+    max_entries_in_window: 600000
+    max_entry_size: 500
+    verbose: true
+    hard_max_cache_size: 8192
+  l2:  # L2 Redis缓存配置
+    enabled: true
+    host: "localhost"
+    port: 6379
+    password: ""
+    db: 0
+    pool_size: 10
+    min_idle_conn: 2
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
 
 # JWT配置
 jwt:
