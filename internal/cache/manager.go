@@ -14,6 +14,7 @@ type Manager struct {
 	l1          types.Cache    // L1本地缓存
 	l2          types.Cache    // L2 Redis缓存
 	invalidator *Invalidator   // 缓存失效器
+	protection  *Protection    // 缓存防护器
 	logger      logger.Logger
 }
 
@@ -40,6 +41,9 @@ func NewManager(config types.CacheConfig, logger logger.Logger) (*Manager, error
 
 	// 初始化缓存失效器
 	manager.invalidator = NewInvalidator(manager, logger)
+
+	// 初始化缓存防护器
+	manager.protection = NewProtection(manager, logger)
 
 	return manager, nil
 }
@@ -237,6 +241,21 @@ func (m *Manager) GetJSON(key string, value interface{}) error {
 	}
 
 	return json.Unmarshal(data, value)
+}
+
+// GetWithProtection 带防护的缓存获取
+func (m *Manager) GetWithProtection(key string) ([]byte, error) {
+	return m.protection.GetWithProtection(key)
+}
+
+// SetWithProtection 带防护的缓存设置
+func (m *Manager) SetWithProtection(key string, value []byte) error {
+	return m.protection.SetWithProtection(key, value)
+}
+
+// GetProtectionStats 获取防护统计信息
+func (m *Manager) GetProtectionStats() ProtectionStats {
+	return m.protection.GetStats()
 }
 
 // Preload 预加载热点数据到缓存
