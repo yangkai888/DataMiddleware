@@ -11,8 +11,8 @@ import (
 
 // Manager 缓存管理器
 type Manager struct {
-	l1    types.Cache // L1本地缓存
-	l2    types.Cache // L2 Redis缓存
+	l1     types.Cache // L1本地缓存
+	l2     types.Cache // L2 Redis缓存
 	logger logger.Logger
 }
 

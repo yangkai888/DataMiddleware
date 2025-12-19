@@ -73,69 +73,69 @@ type Order struct {
 
 // Game 游戏信息
 type Game struct {
-	GameID      string `json:"game_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Version     string `json:"version"`
-	Status      string `json:"status"`
-	Category    string `json:"category"`
-	IconURL     string `json:"icon_url"`
-	BannerURL   string `json:"banner_url"`
-	MinVersion  string `json:"min_version"`
-	IsVisible   bool   `json:"is_visible"`
-	SortOrder   int    `json:"sort_order"`
+	GameID      string    `json:"game_id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Version     string    `json:"version"`
+	Status      string    `json:"status"`
+	Category    string    `json:"category"`
+	IconURL     string    `json:"icon_url"`
+	BannerURL   string    `json:"banner_url"`
+	MinVersion  string    `json:"min_version"`
+	IsVisible   bool      `json:"is_visible"`
+	SortOrder   int       `json:"sort_order"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // GameStats 游戏统计
 type GameStats struct {
-	GameID              string    `json:"game_id"`
-	Date                time.Time `json:"date"`
-	ActiveUsers         int64     `json:"active_users"`
-	NewUsers            int64     `json:"new_users"`
-	TotalUsers          int64     `json:"total_users"`
-	LoginCount          int64     `json:"login_count"`
-	PlayTime            int64     `json:"play_time"`
-	Revenue             int64     `json:"revenue"`
-	OrderCount          int64     `json:"order_count"`
-	ItemPurchaseCount   int64     `json:"item_purchase_count"`
-	ItemConsumptionCount int64    `json:"item_consumption_count"`
+	GameID               string    `json:"game_id"`
+	Date                 time.Time `json:"date"`
+	ActiveUsers          int64     `json:"active_users"`
+	NewUsers             int64     `json:"new_users"`
+	TotalUsers           int64     `json:"total_users"`
+	LoginCount           int64     `json:"login_count"`
+	PlayTime             int64     `json:"play_time"`
+	Revenue              int64     `json:"revenue"`
+	OrderCount           int64     `json:"order_count"`
+	ItemPurchaseCount    int64     `json:"item_purchase_count"`
+	ItemConsumptionCount int64     `json:"item_consumption_count"`
 }
 
 // SystemLog 系统日志
 type SystemLog struct {
-	Level       string    `json:"level"`
-	Message     string    `json:"message"`
-	Source      string    `json:"source"`
-	UserID      string    `json:"user_id"`
-	GameID      string    `json:"game_id"`
-	IPAddress   string    `json:"ip_address"`
-	UserAgent   string    `json:"user_agent"`
-	RequestID   string    `json:"request_id"`
-	Action      string    `json:"action"`
-	Resource    string    `json:"resource"`
-	ResourceID  string    `json:"resource_id"`
-	OldValue    string    `json:"old_value"`
-	NewValue    string    `json:"new_value"`
-	Duration    int64     `json:"duration"`
-	ErrorCode   string    `json:"error_code"`
-	ErrorMsg    string    `json:"error_msg"`
-	CreatedAt   time.Time `json:"created_at"`
+	Level      string    `json:"level"`
+	Message    string    `json:"message"`
+	Source     string    `json:"source"`
+	UserID     string    `json:"user_id"`
+	GameID     string    `json:"game_id"`
+	IPAddress  string    `json:"ip_address"`
+	UserAgent  string    `json:"user_agent"`
+	RequestID  string    `json:"request_id"`
+	Action     string    `json:"action"`
+	Resource   string    `json:"resource"`
+	ResourceID string    `json:"resource_id"`
+	OldValue   string    `json:"old_value"`
+	NewValue   string    `json:"new_value"`
+	Duration   int64     `json:"duration"`
+	ErrorCode  string    `json:"error_code"`
+	ErrorMsg   string    `json:"error_msg"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // UserSession 用户会话
 type UserSession struct {
-	SessionID   string    `json:"session_id"`
-	UserID      string    `json:"user_id"`
-	GameID      string    `json:"game_id"`
-	Token       string    `json:"token"`
-	IPAddress   string    `json:"ip_address"`
-	UserAgent   string    `json:"user_agent"`
-	LoginAt     time.Time `json:"login_at"`
-	ExpireAt    time.Time `json:"expire_at"`
-	IsActive    bool      `json:"is_active"`
-	DeviceID    string    `json:"device_id"`
+	SessionID string    `json:"session_id"`
+	UserID    string    `json:"user_id"`
+	GameID    string    `json:"game_id"`
+	Token     string    `json:"token"`
+	IPAddress string    `json:"ip_address"`
+	UserAgent string    `json:"user_agent"`
+	LoginAt   time.Time `json:"login_at"`
+	ExpireAt  time.Time `json:"expire_at"`
+	IsActive  bool      `json:"is_active"`
+	DeviceID  string    `json:"device_id"`
 }
 
 // ItemRequest 道具创建请求
@@ -166,11 +166,11 @@ type TokenPair struct {
 
 // TokenClaims JWT令牌声明
 type TokenClaims struct {
-	UserID   string `json:"user_id"`
-	GameID   string `json:"game_id"`
-	Username string `json:"username"`
-	ExpiresAt int64 `json:"expires_at"`
-	IssuedAt  int64 `json:"issued_at"`
+	UserID    string `json:"user_id"`
+	GameID    string `json:"game_id"`
+	Username  string `json:"username"`
+	ExpiresAt int64  `json:"expires_at"`
+	IssuedAt  int64  `json:"issued_at"`
 	TokenID   string `json:"token_id"`
 }
 
@@ -201,4 +201,3 @@ type Cache interface {
 	// Close 关闭缓存
 	Close() error
 }
-

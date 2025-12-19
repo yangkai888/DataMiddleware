@@ -19,9 +19,9 @@ type Config struct {
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Env  string      `mapstructure:"env" yaml:"env"`
-	HTTP HTTPConfig  `mapstructure:"http" yaml:"http"`
-	TCP  TCPConfig   `mapstructure:"tcp" yaml:"tcp"`
+	Env  string     `mapstructure:"env" yaml:"env"`
+	HTTP HTTPConfig `mapstructure:"http" yaml:"http"`
+	TCP  TCPConfig  `mapstructure:"tcp" yaml:"tcp"`
 }
 
 // HTTPConfig HTTP服务器配置
@@ -45,9 +45,9 @@ type TCPConfig struct {
 
 // LoggerConfig 日志配置
 type LoggerConfig struct {
-	Level  string     `mapstructure:"level" yaml:"level"`
-	Format string     `mapstructure:"format" yaml:"format"`
-	Output string     `mapstructure:"output" yaml:"output"`
+	Level  string        `mapstructure:"level" yaml:"level"`
+	Format string        `mapstructure:"format" yaml:"format"`
+	Output string        `mapstructure:"output" yaml:"output"`
 	File   LogFileConfig `mapstructure:"file" yaml:"file"`
 }
 
@@ -62,8 +62,8 @@ type LogFileConfig struct {
 
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
-	Primary  DBConfig     `mapstructure:"primary" yaml:"primary"`
-	Replica  []DBConfig   `mapstructure:"replica" yaml:"replica"`
+	Primary DBConfig   `mapstructure:"primary" yaml:"primary"`
+	Replica []DBConfig `mapstructure:"replica" yaml:"replica"`
 }
 
 // DBConfig 数据库连接配置
@@ -103,27 +103,27 @@ type CacheConfig struct {
 
 // CacheConfigL1 L1本地缓存配置
 type CacheConfigL1 struct {
-	Enabled           bool          `mapstructure:"enabled" yaml:"enabled"`
-	Shards            int           `mapstructure:"shards" yaml:"shards"`
-	LifeWindow        time.Duration `mapstructure:"life_window" yaml:"life_window"`
-	CleanWindow       time.Duration `mapstructure:"clean_window" yaml:"clean_window"`
-	MaxEntriesInWindow int          `mapstructure:"max_entries_in_window" yaml:"max_entries_in_window"`
-	MaxEntrySize      int           `mapstructure:"max_entry_size" yaml:"max_entry_size"`
-	Verbose           bool          `mapstructure:"verbose" yaml:"verbose"`
-	HardMaxCacheSize  int           `mapstructure:"hard_max_cache_size" yaml:"hard_max_cache_size"`
+	Enabled            bool          `mapstructure:"enabled" yaml:"enabled"`
+	Shards             int           `mapstructure:"shards" yaml:"shards"`
+	LifeWindow         time.Duration `mapstructure:"life_window" yaml:"life_window"`
+	CleanWindow        time.Duration `mapstructure:"clean_window" yaml:"clean_window"`
+	MaxEntriesInWindow int           `mapstructure:"max_entries_in_window" yaml:"max_entries_in_window"`
+	MaxEntrySize       int           `mapstructure:"max_entry_size" yaml:"max_entry_size"`
+	Verbose            bool          `mapstructure:"verbose" yaml:"verbose"`
+	HardMaxCacheSize   int           `mapstructure:"hard_max_cache_size" yaml:"hard_max_cache_size"`
 }
 
 // CacheConfigL2 L2 Redis缓存配置
 type CacheConfigL2 struct {
-	Enabled     bool          `mapstructure:"enabled" yaml:"enabled"`
-	Host        string        `mapstructure:"host" yaml:"host"`
-	Port        int           `mapstructure:"port" yaml:"port"`
-	Password    string        `mapstructure:"password" yaml:"password"`
-	DB          int           `mapstructure:"db" yaml:"db"`
-	PoolSize    int           `mapstructure:"pool_size" yaml:"pool_size"`
-	MinIdleConn int           `mapstructure:"min_idle_conn" yaml:"min_idle_conn"`
-	DialTimeout time.Duration `mapstructure:"dial_timeout" yaml:"dial_timeout"`
-	ReadTimeout time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
+	Enabled      bool          `mapstructure:"enabled" yaml:"enabled"`
+	Host         string        `mapstructure:"host" yaml:"host"`
+	Port         int           `mapstructure:"port" yaml:"port"`
+	Password     string        `mapstructure:"password" yaml:"password"`
+	DB           int           `mapstructure:"db" yaml:"db"`
+	PoolSize     int           `mapstructure:"pool_size" yaml:"pool_size"`
+	MinIdleConn  int           `mapstructure:"min_idle_conn" yaml:"min_idle_conn"`
+	DialTimeout  time.Duration `mapstructure:"dial_timeout" yaml:"dial_timeout"`
+	ReadTimeout  time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
 	WriteTimeout time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
 }
 
