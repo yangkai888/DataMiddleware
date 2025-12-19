@@ -134,19 +134,12 @@ func (s *HTTPServer) setupMiddlewares() {
 func (s *HTTPServer) setupMonitorRoutes() {
 	// 基础健康检查
 	s.engine.GET("/health", s.healthCheck)
-	s.engine.GET("/api/v1/health", s.healthCheck)
 
 	// 详细健康检查
 	s.engine.GET("/health/detailed", s.detailedHealthCheck)
-	s.engine.GET("/api/v1/health/detailed", s.detailedHealthCheck)
-
-	// 系统指标
-	s.engine.GET("/metrics", s.systemMetrics)
-	s.engine.GET("/api/v1/metrics", s.systemMetrics)
 
 	// 组件健康状态
 	s.engine.GET("/health/components", s.componentHealth)
-	s.engine.GET("/api/v1/health/components", s.componentHealth)
 }
 
 // setupRoutes 设置路由

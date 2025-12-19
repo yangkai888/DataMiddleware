@@ -58,11 +58,17 @@ type BusinessTask struct {
 }
 
 func NewBusinessTask(id, action string, params map[string]interface{}, callback func(result interface{}, err error)) *BusinessTask {
+	// 从参数中获取优先级，如果没有设置则使用默认值
+	priority := 5 // 默认中等优先级
+	if p, ok := params["priority"].(int); ok {
+		priority = p
+	}
+
 	return &BusinessTask{
 		BaseTask: BaseTask{
 			ID:       id,
 			Type:     "business",
-			Priority: 5, // 业务任务优先级中等
+			Priority: priority,
 		},
 		Action:   action,
 		Params:   params,
