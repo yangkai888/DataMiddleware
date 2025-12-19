@@ -16,13 +16,13 @@ echo
 echo "3. 玩家登录测试（预期失败 - 无数据库）"
 curl -s -X POST "$BASE_URL/players/login" \
   -H "Content-Type: application/json" \
-  -d '{"user_id":"test001","game_id":"game1","device_id":"device123","platform":"android","version":"1.0.0"}' | jq '.code'
+  -d '{"game_id":"game1","username":"testuser","password":"testpass"}' | jq '.code'
 echo
 
 echo "4. 道具创建测试（预期失败 - 无数据库）"
 curl -s -X POST "$BASE_URL/items" \
   -H "Content-Type: application/json" \
-  -d '{"user_id":"test001","game_id":"game1","name":"金币","type":"currency","category":"resource","quantity":100}' | jq '.code'
+  -d '{"user_id":"test001","game_id":"game1","item_id":"item001","name":"金币","type":"currency","quantity":100}' | jq '.code'
 echo
 
 echo "5. 订单创建测试（模拟成功）"
