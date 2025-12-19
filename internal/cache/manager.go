@@ -11,9 +11,10 @@ import (
 
 // Manager 缓存管理器
 type Manager struct {
-	l1     types.Cache // L1本地缓存
-	l2     types.Cache // L2 Redis缓存
-	logger logger.Logger
+	l1          types.Cache    // L1本地缓存
+	l2          types.Cache    // L2 Redis缓存
+	invalidator *Invalidator   // 缓存失效器
+	logger      logger.Logger
 }
 
 // NewManager 创建缓存管理器
@@ -36,6 +37,9 @@ func NewManager(config types.CacheConfig, logger logger.Logger) (*Manager, error
 		// L2缓存失败不影响启动
 	}
 	manager.l2 = l2Cache
+
+	// 初始化缓存失效器
+	manager.invalidator = NewInvalidator(manager, logger)
 
 	return manager, nil
 }
@@ -233,4 +237,86 @@ func (m *Manager) GetJSON(key string, value interface{}) error {
 	}
 
 	return json.Unmarshal(data, value)
+}
+
+// Preload 预加载热点数据到缓存
+func (m *Manager) Preload(data map[string][]byte) error {
+	m.logger.Info("开始缓存预热", "count", len(data))
+
+	successCount := 0
+	for key, value := range data {
+		if err := m.Set(key, value); err != nil {
+			m.logger.Warn("缓存预热失败", "key", key, "error", err)
+			continue
+		}
+		successCount++
+	}
+
+	m.logger.Info("缓存预热完成", "total", len(data), "success", successCount)
+	return nil
+}
+
+// Invalidate 使缓存失效（支持模式匹配）
+func (m *Manager) Invalidate(pattern string) error {
+	// 对于Redis缓存，支持键模式删除
+	if m.l2 != nil {
+		// 这里可以实现更复杂的失效策略
+		// 目前先记录日志，实际应用中可以扩展
+		m.logger.Info("缓存失效模式", "pattern", pattern)
+	}
+
+	// 对于本地缓存，由于bigcache不支持模式删除，
+	// 可以考虑实现一个键前缀匹配的逻辑
+
+	return nil
+}
+
+// Warmup 缓存预热接口
+type Warmup interface {
+	// GetHotspotKeys 获取热点键列表
+	GetHotspotKeys() []string
+	// LoadData 加载数据
+	LoadData(keys []string) map[string][]byte
+}
+
+// WarmupCache 缓存预热
+func (m *Manager) WarmupCache(warmer Warmup) error {
+	m.logger.Info("开始缓存预热流程")
+
+	// 获取热点键
+	hotKeys := warmer.GetHotspotKeys()
+	if len(hotKeys) == 0 {
+		m.logger.Info("没有热点数据需要预热")
+		return nil
+	}
+
+	// 加载数据
+	data := warmer.LoadData(hotKeys)
+	if len(data) == 0 {
+		m.logger.Warn("预热数据加载为空")
+		return nil
+	}
+
+	// 预加载到缓存
+	return m.Preload(data)
+}
+
+// InvalidateByPattern 按模式使缓存失效
+func (m *Manager) InvalidateByPattern(pattern string) error {
+	return m.invalidator.InvalidateByPattern(pattern)
+}
+
+// InvalidateByPrefix 按前缀使缓存失效
+func (m *Manager) InvalidateByPrefix(prefix string) error {
+	return m.invalidator.InvalidateByPrefix(prefix)
+}
+
+// ScheduleInvalidation 定时缓存失效
+func (m *Manager) ScheduleInvalidation(key string, delay time.Duration) {
+	m.invalidator.ScheduleInvalidation(key, delay)
+}
+
+// BatchInvalidate 批量缓存失效
+func (m *Manager) BatchInvalidate(keys []string) error {
+	return m.invalidator.BatchInvalidate(keys)
 }

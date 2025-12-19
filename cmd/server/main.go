@@ -103,8 +103,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 这里将添加其他服务器初始化代码
-	// TODO: 初始化缓存
+	// 缓存预热
+	warmup := cache.NewDefaultWarmup(log)
+	if err := cacheManager.WarmupCache(warmup); err != nil {
+		log.Warn("缓存预热失败", "error", err)
+		// 预热失败不影响服务启动
+	}
 
 	log.Info("数据中间件服务启动完成")
 
