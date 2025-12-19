@@ -254,10 +254,10 @@ func isConnectionClosedError(err error) bool {
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "connection reset by peer") ||
-		   strings.Contains(errStr, "broken pipe") ||
-		   strings.Contains(errStr, "connection refused") ||
-		   strings.Contains(errStr, "connection closed") ||
-		   strings.Contains(errStr, "EOF")
+		strings.Contains(errStr, "broken pipe") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection closed") ||
+		strings.Contains(errStr, "EOF")
 }
 
 // handleConnectionLoop 处理连接循环

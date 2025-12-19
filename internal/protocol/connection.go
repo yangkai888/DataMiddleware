@@ -13,6 +13,19 @@ import (
 	"datamiddleware/pkg/types"
 )
 
+// isConnectionClosedError 检查是否是连接关闭相关的错误
+func isConnectionClosedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection reset by peer") ||
+		strings.Contains(errStr, "broken pipe") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection closed") ||
+		strings.Contains(errStr, "use of closed network connection")
+}
+
 // Connection TCP连接包装器
 type Connection struct {
 	ID               string                 `json:"id"`                // 连接ID
@@ -138,7 +151,12 @@ func (c *Connection) SendMessage(msg *types.Message) error {
 
 	n, err := c.Conn.Write(data)
 	if err != nil {
-		c.Logger.Error("发送消息失败", "conn_id", c.ID, "error", err)
+		// 检查是否是连接关闭相关的错误
+		if isConnectionClosedError(err) {
+			c.Logger.Debug("连接已关闭，发送消息失败", "conn_id", c.ID, "error", err)
+		} else {
+			c.Logger.Error("发送消息失败", "conn_id", c.ID, "error", err)
+		}
 		atomic.AddInt64(&c.Info.BytesSent, int64(n))
 		atomic.AddInt64(&c.Info.MessagesSent, 1)
 		c.updateActivity()
