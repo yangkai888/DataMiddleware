@@ -17,7 +17,8 @@ type Player struct {
 	BaseModel
 	UserID      string    `gorm:"uniqueIndex;size:64" json:"user_id"`       // 用户ID
 	GameID      string    `gorm:"index;size:64" json:"game_id"`             // 游戏ID
-	Username    string    `gorm:"size:64" json:"username"`                  // 用户名
+	Username    string    `gorm:"uniqueIndex;size:64" json:"username"`      // 用户名
+	Password    string    `gorm:"size:256" json:"-"`                        // 密码哈希（JSON中不输出）
 	Email       string    `gorm:"size:128" json:"email"`                    // 邮箱
 	Phone       string    `gorm:"size:32" json:"phone"`                     // 手机号
 	Nickname    string    `gorm:"size:64" json:"nickname"`                  // 昵称

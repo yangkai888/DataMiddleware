@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"datamiddleware/internal/auth"
 	"datamiddleware/internal/database"
 	"datamiddleware/internal/errors"
 	"datamiddleware/internal/logger"
 	"datamiddleware/internal/monitor"
+	"datamiddleware/internal/services"
 	"datamiddleware/pkg/types"
 
 	"github.com/gin-gonic/gin"
@@ -24,10 +26,14 @@ type HTTPServer struct {
 	dao          database.DAO         `json:"-"`      // 数据访问对象
 	server       *http.Server         `json:"-"`      // HTTP服务器
 	monitor      *monitor.Monitor     `json:"-"`      // 监控器
+	jwtService   *auth.JWTService     `json:"-"`      // JWT认证服务
+	playerService *services.PlayerService `json:"-"`  // 玩家服务
+	itemService   *services.ItemService   `json:"-"`  // 道具服务
+	orderService  *services.OrderService  `json:"-"`  // 订单服务
 }
 
 // NewHTTPServer 创建HTTP服务器
-func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *errors.ErrorHandler, dao database.DAO) *HTTPServer {
+func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *errors.ErrorHandler, dao database.DAO, jwtService *auth.JWTService, playerService *services.PlayerService, itemService *services.ItemService, orderService *services.OrderService) *HTTPServer {
 	// 根据环境设置Gin模式
 	switch config.Env {
 	case "prod":
@@ -44,12 +50,16 @@ func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *e
 	monitor := monitor.NewMonitor(log)
 
 	server := &HTTPServer{
-		config:       config,
-		engine:       engine,
-		logger:       log,
-		errorHandler: errorHandler,
-		dao:          dao,
-		monitor:      monitor,
+		config:        config,
+		engine:        engine,
+		logger:        log,
+		errorHandler:  errorHandler,
+		dao:           dao,
+		monitor:       monitor,
+		jwtService:    jwtService,
+		playerService: playerService,
+		itemService:   itemService,
+		orderService:  orderService,
 	}
 
 	// 设置中间件
@@ -144,6 +154,7 @@ func (s *HTTPServer) setupMonitorRoutes() {
 
 // setupRoutes 设置路由
 func (s *HTTPServer) setupRoutes() {
+	s.logger.Info("开始设置路由...路由设置函数被调用")
 	// API版本分组
 	v1 := s.engine.Group("/api/v1")
 	{
@@ -153,6 +164,7 @@ func (s *HTTPServer) setupRoutes() {
 		// 玩家相关接口
 		players := v1.Group("/players")
 		{
+			players.POST("/register", s.playerRegister)
 			players.POST("/login", s.playerLogin)
 			players.POST("/logout", s.playerLogout)
 			players.GET("/:id", s.getPlayer)
@@ -191,6 +203,8 @@ func (s *HTTPServer) setupRoutes() {
 
 	// WebSocket接口（预留）
 	s.engine.GET("/ws", s.websocketHandler)
+
+	s.logger.Info("路由设置完成")
 }
 
 // monitoringMiddleware 监控中间件
@@ -266,7 +280,7 @@ func (s *HTTPServer) corsMiddleware() gin.HandlerFunc {
 // authMiddleware 认证中间件
 func (s *HTTPServer) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 跳过健康检查和监控接口
+		// 跳过健康检查、监控和认证相关接口
 		if c.Request.URL.Path == "/api/v1/health" ||
 			c.Request.URL.Path == "/health" ||
 			c.Request.URL.Path == "/health/detailed" ||
@@ -274,13 +288,53 @@ func (s *HTTPServer) authMiddleware() gin.HandlerFunc {
 			c.Request.URL.Path == "/metrics" ||
 			c.Request.URL.Path == "/api/v1/health/detailed" ||
 			c.Request.URL.Path == "/api/v1/metrics" ||
-			c.Request.URL.Path == "/api/v1/health/components" {
+			c.Request.URL.Path == "/api/v1/health/components" ||
+			c.Request.URL.Path == "/api/v1/players/register" ||
+			c.Request.URL.Path == "/api/v1/players/login" {
 			c.Next()
 			return
 		}
 
-		// TODO: 实现JWT认证逻辑
-		// 这里暂时跳过认证
+		// 获取Authorization头
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			s.logger.Warn("缺少Authorization头", "path", c.Request.URL.Path)
+			c.AbortWithStatusJSON(401, gin.H{
+				"code":    401,
+				"message": "缺少认证令牌",
+			})
+			return
+		}
+
+		// 从Authorization头提取令牌
+		token, err := s.jwtService.ExtractTokenFromHeader(authHeader)
+		if err != nil {
+			s.logger.Warn("无效的Authorization头格式", "header", authHeader[:20]+"...")
+			c.AbortWithStatusJSON(401, gin.H{
+				"code":    401,
+				"message": "无效的认证令牌格式",
+			})
+			return
+		}
+
+		// 验证JWT令牌
+		claims, err := s.jwtService.ValidateToken(token)
+		if err != nil {
+			s.logger.Warn("JWT令牌验证失败", "error", err)
+			c.AbortWithStatusJSON(401, gin.H{
+				"code":    401,
+				"message": "认证令牌无效或已过期",
+			})
+			return
+		}
+
+		// 将用户信息存储到上下文中
+		c.Set("user_id", claims.UserID)
+		c.Set("game_id", claims.GameID)
+		c.Set("username", claims.Username)
+		c.Set("token_id", claims.TokenID)
+
+		s.logger.Debug("JWT认证成功", "user_id", claims.UserID, "path", c.Request.URL.Path)
 		c.Next()
 	}
 }
@@ -444,12 +498,14 @@ func (s *HTTPServer) componentHealth(c *gin.Context) {
 	})
 }
 
-// playerLogin 玩家登录
-func (s *HTTPServer) playerLogin(c *gin.Context) {
+// playerRegister 玩家注册
+func (s *HTTPServer) playerRegister(c *gin.Context) {
 	var req struct {
 		GameID   string `json:"game_id" binding:"required"`
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
+		Email    string `json:"email"`
+		Phone    string `json:"phone"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -461,16 +517,97 @@ func (s *HTTPServer) playerLogin(c *gin.Context) {
 		return
 	}
 
-	// TODO: 实现玩家登录逻辑
-	s.logger.Info("玩家登录请求", "game_id", req.GameID, "username", req.Username)
+	// 调用玩家服务注册
+	player, err := s.playerService.RegisterPlayer(req.GameID, req.Username, req.Password, req.Email, req.Phone)
+	if err != nil {
+		s.logger.Warn("玩家注册失败", "username", req.Username, "game_id", req.GameID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "注册失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
+
+	s.logger.Info("玩家注册成功", "user_id", player.UserID, "username", req.Username, "game_id", req.GameID)
+
+	c.JSON(200, gin.H{
+		"code":    0,
+		"message": "注册成功",
+		"data":    player,
+	})
+}
+
+// playerLogin 玩家登录
+func (s *HTTPServer) playerLogin(c *gin.Context) {
+	var req struct {
+		GameID   string `json:"game_id" binding:"required"`
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+		DeviceID string `json:"device_id"`
+		Platform string `json:"platform"`
+		Version  string `json:"version"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		bizErr := s.errorHandler.Handle(err, "参数绑定失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
+
+	// 设置默认值
+	if req.DeviceID == "" {
+		req.DeviceID = "web"
+	}
+	if req.Platform == "" {
+		req.Platform = "web"
+	}
+	if req.Version == "" {
+		req.Version = "1.0.0"
+	}
+
+	// 调用玩家服务登录
+	result, err := s.playerService.LoginPlayerByUsername(req.Username, req.Password, req.GameID, req.DeviceID, req.Platform, req.Version)
+	if err != nil {
+		s.logger.Warn("玩家登录失败", "username", req.Username, "game_id", req.GameID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "登录失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
+
+	// 生成JWT令牌
+	tokenPair, err := s.jwtService.GenerateToken(result.User.UserID, req.GameID, result.User.Username)
+	if err != nil {
+		s.logger.Error("生成JWT令牌失败", "user_id", result.User.UserID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "令牌生成失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
+
+	s.logger.Info("玩家登录成功", "user_id", result.User.UserID, "username", req.Username, "game_id", req.GameID)
 
 	c.JSON(200, gin.H{
 		"code":    0,
 		"message": "登录成功",
 		"data": gin.H{
-			"user_id":    "user123",
-			"token":      "jwt_token_here",
-			"expires_at": time.Now().Add(24 * time.Hour).Unix(),
+			"user":       result.User,
+			"session_id": result.SessionID,
+			"token": gin.H{
+				"access_token":  tokenPair.AccessToken,
+				"refresh_token": tokenPair.RefreshToken,
+				"token_type":    tokenPair.TokenType,
+				"expires_in":    tokenPair.ExpiresIn,
+				"expires_at":    tokenPair.ExpiresAt,
+			},
 		},
 	})
 }
@@ -503,19 +640,22 @@ func (s *HTTPServer) playerLogout(c *gin.Context) {
 func (s *HTTPServer) getPlayer(c *gin.Context) {
 	userID := c.Param("id")
 
-	// TODO: 从数据库获取玩家信息
-	s.logger.Info("获取玩家信息", "user_id", userID)
+	// 调用玩家服务获取信息
+	player, err := s.playerService.GetPlayer(userID)
+	if err != nil {
+		s.logger.Warn("获取玩家信息失败", "user_id", userID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "获取玩家信息失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
 
 	c.JSON(200, gin.H{
 		"code":    0,
 		"message": "获取成功",
-		"data": gin.H{
-			"user_id":    userID,
-			"username":   "testuser",
-			"level":      10,
-			"coins":      1000,
-			"created_at": time.Now().Add(-24 * time.Hour).Unix(),
-		},
+		"data":    player,
 	})
 }
 
@@ -524,8 +664,8 @@ func (s *HTTPServer) updatePlayer(c *gin.Context) {
 	userID := c.Param("id")
 
 	var req struct {
-		Level int `json:"level"`
-		Coins int `json:"coins"`
+		Nickname string `json:"nickname"`
+		Avatar   string `json:"avatar"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -537,12 +677,39 @@ func (s *HTTPServer) updatePlayer(c *gin.Context) {
 		return
 	}
 
-	// TODO: 更新玩家信息
-	s.logger.Info("更新玩家信息", "user_id", userID, "level", req.Level, "coins", req.Coins)
+	// 构建更新字段
+	updates := make(map[string]interface{})
+	if req.Nickname != "" {
+		updates["nickname"] = req.Nickname
+	}
+	if req.Avatar != "" {
+		updates["avatar"] = req.Avatar
+	}
+
+	if len(updates) == 0 {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "没有需要更新的字段",
+		})
+		return
+	}
+
+	// 调用玩家服务更新
+	player, err := s.playerService.UpdatePlayer(userID, updates)
+	if err != nil {
+		s.logger.Warn("更新玩家信息失败", "user_id", userID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "更新玩家信息失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
 
 	c.JSON(200, gin.H{
 		"code":    0,
 		"message": "更新成功",
+		"data":    player,
 	})
 }
 
@@ -551,27 +718,32 @@ func (s *HTTPServer) getItems(c *gin.Context) {
 	userID := c.Query("user_id")
 	gameID := c.Query("game_id")
 
-	// TODO: 从数据库获取道具列表
-	s.logger.Info("获取道具列表", "user_id", userID, "game_id", gameID)
+	if userID == "" {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "缺少用户ID参数",
+		})
+		return
+	}
+
+	// 调用道具服务获取列表
+	items, err := s.itemService.GetUserItems(userID, gameID)
+	if err != nil {
+		s.logger.Warn("获取道具列表失败", "user_id", userID, "game_id", gameID, "error", err)
+		bizErr := s.errorHandler.Handle(err, "获取道具列表失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
 
 	c.JSON(200, gin.H{
 		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
-			"items": []gin.H{
-				{
-					"item_id":  "item001",
-					"name":     "金币",
-					"quantity": 1000,
-					"type":     "currency",
-				},
-				{
-					"item_id":  "item002",
-					"name":     "钻石",
-					"quantity": 100,
-					"type":     "currency",
-				},
-			},
+			"items": items,
+			"total": len(items),
 		},
 	})
 }
@@ -581,10 +753,10 @@ func (s *HTTPServer) createItem(c *gin.Context) {
 	var req struct {
 		UserID   string `json:"user_id" binding:"required"`
 		GameID   string `json:"game_id" binding:"required"`
-		ItemID   string `json:"item_id" binding:"required"`
 		Name     string `json:"name" binding:"required"`
 		Quantity int    `json:"quantity" binding:"required"`
 		Type     string `json:"type" binding:"required"`
+		Category string `json:"category"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -596,14 +768,23 @@ func (s *HTTPServer) createItem(c *gin.Context) {
 		return
 	}
 
-	// TODO: 创建道具
-	s.logger.Info("创建道具", "user_id", req.UserID, "item_id", req.ItemID, "name", req.Name)
+	// 调用道具服务创建道具
+	item, err := s.itemService.CreateItem(req.UserID, req.GameID, req.Name, req.Type, req.Category, int64(req.Quantity))
+	if err != nil {
+		s.logger.Error("创建道具失败", "user_id", req.UserID, "game_id", req.GameID, "name", req.Name, "error", err)
+		bizErr := s.errorHandler.Handle(err, "创建道具失败")
+		c.JSON(bizErr.HTTPStatus, gin.H{
+			"code":    bizErr.Code,
+			"message": bizErr.Message,
+		})
+		return
+	}
 
 	c.JSON(201, gin.H{
 		"code":    0,
 		"message": "创建成功",
 		"data": gin.H{
-			"item_id": req.ItemID,
+			"item_id": item.ItemID,
 		},
 	})
 }

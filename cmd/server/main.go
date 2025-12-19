@@ -64,14 +64,14 @@ func main() {
 	// 初始化DAO层
 	dao := database.NewDAO(db, log)
 
-	// 初始化业务服务
-	playerService := services.NewPlayerService(dao, log)
-	itemService := services.NewItemService(dao, log)
-	orderService := services.NewOrderService(dao, log)
-
 	// 初始化JWT服务
 	jwtService := auth.NewJWTService(cfg.JWT, log)
 	_ = jwtService // TODO: 在后续功能中使用JWT服务
+
+	// 初始化业务服务
+	playerService := services.NewPlayerService(dao, log, jwtService)
+	itemService := services.NewItemService(dao, log)
+	orderService := services.NewOrderService(dao, log)
 
 	// 初始化缓存管理器
 	cacheManager, err := cache.NewManager(cfg.Cache, log)
@@ -97,7 +97,7 @@ func main() {
 	}
 
 	// 初始化HTTP服务器
-	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao)
+	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao, jwtService, playerService, itemService, orderService)
 	if err := httpServer.Start(); err != nil {
 		log.Error("HTTP服务器启动失败", "error", err)
 		os.Exit(1)

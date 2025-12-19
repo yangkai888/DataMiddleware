@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+	"datamiddleware/internal/auth"
 	"datamiddleware/internal/database"
 	"datamiddleware/internal/logger"
 	"datamiddleware/pkg/types"
@@ -13,20 +15,22 @@ import (
 
 // PlayerService 玩家服务
 type PlayerService struct {
-	dao    database.DAO
-	logger logger.Logger
+	dao         database.DAO
+	logger      logger.Logger
+	authService *auth.JWTService
 }
 
 // NewPlayerService 创建玩家服务
-func NewPlayerService(dao database.DAO, log logger.Logger) *PlayerService {
+func NewPlayerService(dao database.DAO, log logger.Logger, authService *auth.JWTService) *PlayerService {
 	return &PlayerService{
-		dao:    dao,
-		logger: log,
+		dao:         dao,
+		logger:      log,
+		authService: authService,
 	}
 }
 
 // RegisterPlayer 注册玩家
-func (s *PlayerService) RegisterPlayer(gameID, username, email, phone string) (*types.Player, error) {
+func (s *PlayerService) RegisterPlayer(gameID, username, password, email, phone string) (*types.Player, error) {
 	// 检查用户名是否已存在
 	existing, err := s.dao.GetPlayerByUsername(username)
 	if err != nil {
@@ -44,11 +48,19 @@ func (s *PlayerService) RegisterPlayer(gameID, username, email, phone string) (*
 		return nil, fmt.Errorf("生成用户ID失败: %w", err)
 	}
 
+	// 哈希密码
+	hashedPassword, err := s.hashPassword(password)
+	if err != nil {
+		s.logger.Error("密码哈希失败", "error", err)
+		return nil, fmt.Errorf("密码哈希失败: %w", err)
+	}
+
 	// 创建玩家
 	player := &database.Player{
 		UserID:      userID,
 		GameID:      gameID,
 		Username:    username,
+		Password:    hashedPassword,
 		Email:       email,
 		Phone:       phone,
 		Nickname:    username, // 默认昵称与用户名相同
@@ -68,6 +80,33 @@ func (s *PlayerService) RegisterPlayer(gameID, username, email, phone string) (*
 
 	// 转换为API类型
 	return s.convertToAPITypes(player), nil
+}
+
+// LoginPlayerByUsername 通过用户名密码登录
+func (s *PlayerService) LoginPlayerByUsername(username, password, gameID, deviceID, platform, version string) (*types.LoginResult, error) {
+	// 获取玩家信息
+	player, err := s.dao.GetPlayerByUsername(username)
+	if err != nil {
+		s.logger.Error("获取玩家信息失败", "username", username, "error", err)
+		return nil, fmt.Errorf("获取玩家信息失败: %w", err)
+	}
+	if player == nil {
+		return nil, fmt.Errorf("用户名不存在: %s", username)
+	}
+
+	// 验证密码
+	if err := s.verifyPassword(password, player.Password); err != nil {
+		s.logger.Warn("密码验证失败", "username", username)
+		return nil, fmt.Errorf("密码错误")
+	}
+
+	// 检查玩家状态
+	if player.Status != "active" {
+		return nil, fmt.Errorf("玩家账号状态异常: %s", player.Status)
+	}
+
+	// 调用现有的登录逻辑
+	return s.LoginPlayer(player.UserID, gameID, deviceID, platform, version)
 }
 
 // LoginPlayer 玩家登录
@@ -289,6 +328,17 @@ func (s *PlayerService) CleanupExpiredSessions() error {
 
 	s.logger.Info("过期会话清理完成")
 	return nil
+}
+
+// hashPassword 哈希密码
+func (s *PlayerService) hashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+}
+
+// verifyPassword 验证密码
+func (s *PlayerService) verifyPassword(password, hash string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 }
 
 // Helper methods
