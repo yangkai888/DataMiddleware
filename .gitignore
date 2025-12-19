@@ -46,3 +46,6 @@ config.dev.yml
 # Temporary files
 tmp/
 temp/
+
+# Oracle FDW (separate project)
+oracle_fdw/

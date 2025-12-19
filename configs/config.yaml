@@ -39,7 +39,7 @@ database:
     host: "localhost"
     port: 3306
     username: "root"
-    password: "password"
+    password: "MySQL@123456"
     database: "datamiddleware"
     charset: "utf8mb4"
     max_open_conns: 100
