@@ -103,6 +103,9 @@ func main() {
 		os.Exit(1)
 	}
 
+	// TODO: 注册健康检查器
+	// 暂时简化实现，后续完善
+
 	// 缓存预热
 	warmup := cache.NewDefaultWarmup(log)
 	if err := cacheManager.WarmupCache(warmup); err != nil {

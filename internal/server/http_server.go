@@ -6,21 +6,24 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"datamiddleware/internal/database"
 	"datamiddleware/internal/errors"
 	"datamiddleware/internal/logger"
+	"datamiddleware/internal/monitor"
 	"datamiddleware/pkg/types"
+
+	"github.com/gin-gonic/gin"
 )
 
 // HTTPServer HTTP服务器
 type HTTPServer struct {
-	config      types.ServerConfig `json:"config"`      // 服务器配置
-	engine      *gin.Engine        `json:"-"`           // Gin引擎
-	logger      logger.Logger      `json:"-"`           // 日志器
-	errorHandler *errors.ErrorHandler `json:"-"`        // 错误处理器
-	dao         database.DAO       `json:"-"`           // 数据访问对象
-	server      *http.Server       `json:"-"`           // HTTP服务器
+	config       types.ServerConfig   `json:"config"` // 服务器配置
+	engine       *gin.Engine          `json:"-"`      // Gin引擎
+	logger       logger.Logger        `json:"-"`      // 日志器
+	errorHandler *errors.ErrorHandler `json:"-"`      // 错误处理器
+	dao          database.DAO         `json:"-"`      // 数据访问对象
+	server       *http.Server         `json:"-"`      // HTTP服务器
+	monitor      *monitor.Monitor     `json:"-"`      // 监控器
 }
 
 // NewHTTPServer 创建HTTP服务器
@@ -37,12 +40,16 @@ func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *e
 
 	engine := gin.New()
 
+	// 初始化监控器
+	monitor := monitor.NewMonitor(log)
+
 	server := &HTTPServer{
 		config:       config,
 		engine:       engine,
 		logger:       log,
 		errorHandler: errorHandler,
 		dao:          dao,
+		monitor:      monitor,
 	}
 
 	// 设置中间件
@@ -50,6 +57,9 @@ func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *e
 
 	// 设置路由
 	server.setupRoutes()
+
+	// 注册监控路由
+	server.setupMonitorRoutes()
 
 	return server
 }
@@ -94,10 +104,18 @@ func (s *HTTPServer) Stop() error {
 	return nil
 }
 
+// GetMonitor 获取监控器
+func (s *HTTPServer) GetMonitor() *monitor.Monitor {
+	return s.monitor
+}
+
 // setupMiddlewares 设置中间件
 func (s *HTTPServer) setupMiddlewares() {
 	// 恢复中间件 - 捕获panic
 	s.engine.Use(gin.Recovery())
+
+	// 监控中间件
+	s.engine.Use(s.monitoringMiddleware())
 
 	// 日志中间件
 	s.engine.Use(s.loggingMiddleware())
@@ -110,6 +128,25 @@ func (s *HTTPServer) setupMiddlewares() {
 
 	// 错误处理中间件
 	s.engine.Use(s.errorMiddleware())
+}
+
+// setupMonitorRoutes 设置监控路由
+func (s *HTTPServer) setupMonitorRoutes() {
+	// 基础健康检查
+	s.engine.GET("/health", s.healthCheck)
+	s.engine.GET("/api/v1/health", s.healthCheck)
+
+	// 详细健康检查
+	s.engine.GET("/health/detailed", s.detailedHealthCheck)
+	s.engine.GET("/api/v1/health/detailed", s.detailedHealthCheck)
+
+	// 系统指标
+	s.engine.GET("/metrics", s.systemMetrics)
+	s.engine.GET("/api/v1/metrics", s.systemMetrics)
+
+	// 组件健康状态
+	s.engine.GET("/health/components", s.componentHealth)
+	s.engine.GET("/api/v1/health/components", s.componentHealth)
 }
 
 // setupRoutes 设置路由
@@ -161,6 +198,25 @@ func (s *HTTPServer) setupRoutes() {
 
 	// WebSocket接口（预留）
 	s.engine.GET("/ws", s.websocketHandler)
+}
+
+// monitoringMiddleware 监控中间件
+func (s *HTTPServer) monitoringMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		// 处理请求
+		c.Next()
+
+		// 记录请求统计
+		duration := time.Since(start)
+		statusCode := c.Writer.Status()
+		success := statusCode >= 200 && statusCode < 400
+
+		if s.monitor != nil {
+			s.monitor.RecordRequest(duration, success)
+		}
+	}
 }
 
 // loggingMiddleware 日志中间件
@@ -217,9 +273,15 @@ func (s *HTTPServer) corsMiddleware() gin.HandlerFunc {
 // authMiddleware 认证中间件
 func (s *HTTPServer) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 跳过健康检查和一些公开接口
+		// 跳过健康检查和监控接口
 		if c.Request.URL.Path == "/api/v1/health" ||
-		   c.Request.URL.Path == "/metrics" {
+			c.Request.URL.Path == "/health" ||
+			c.Request.URL.Path == "/health/detailed" ||
+			c.Request.URL.Path == "/health/components" ||
+			c.Request.URL.Path == "/metrics" ||
+			c.Request.URL.Path == "/api/v1/health/detailed" ||
+			c.Request.URL.Path == "/api/v1/metrics" ||
+			c.Request.URL.Path == "/api/v1/health/components" {
 			c.Next()
 			return
 		}
@@ -255,10 +317,137 @@ func (s *HTTPServer) errorMiddleware() gin.HandlerFunc {
 
 // healthCheck 健康检查
 func (s *HTTPServer) healthCheck(c *gin.Context) {
+	metrics := s.monitor.GetSystemMetrics()
+
+	// 检查是否有严重问题
+	hasCriticalIssues := false
+	for _, component := range metrics.Components {
+		if component.Status == "unhealthy" {
+			hasCriticalIssues = true
+			break
+		}
+	}
+
+	status := "ok"
+	if hasCriticalIssues {
+		status = "warning"
+	}
+
 	c.JSON(200, gin.H{
-		"status": "ok",
+		"status":    status,
 		"timestamp": time.Now().Unix(),
-		"version": "1.0.0",
+		"version":   "1.0.0",
+		"uptime":    metrics.Uptime,
+	})
+}
+
+// detailedHealthCheck 详细健康检查
+func (s *HTTPServer) detailedHealthCheck(c *gin.Context) {
+	metrics := s.monitor.GetSystemMetrics()
+
+	// 整体健康状态
+	overallStatus := "healthy"
+	unhealthyCount := 0
+
+	for _, component := range metrics.Components {
+		if component.Status == "unhealthy" {
+			unhealthyCount++
+			overallStatus = "unhealthy"
+		} else if component.Status == "unknown" && overallStatus == "healthy" {
+			overallStatus = "warning"
+		}
+	}
+
+	response := gin.H{
+		"status":    overallStatus,
+		"timestamp": time.Now().Unix(),
+		"version":   "1.0.0",
+		"uptime":    metrics.Uptime,
+		"system_metrics": gin.H{
+			"total_requests":    metrics.TotalRequests,
+			"active_requests":   metrics.ActiveRequests,
+			"failed_requests":   metrics.FailedRequests,
+			"avg_response_time": metrics.AvgResponseTime.String(),
+			"goroutines":        metrics.Goroutines,
+		},
+		"memory": gin.H{
+			"alloc_mb":       float64(metrics.Memory.Alloc) / 1024 / 1024,
+			"total_alloc_mb": float64(metrics.Memory.TotalAlloc) / 1024 / 1024,
+			"sys_mb":         float64(metrics.Memory.Sys) / 1024 / 1024,
+			"heap_alloc_mb":  float64(metrics.Memory.HeapAlloc) / 1024 / 1024,
+			"heap_sys_mb":    float64(metrics.Memory.HeapSys) / 1024 / 1024,
+			"heap_idle_mb":   float64(metrics.Memory.HeapIdle) / 1024 / 1024,
+			"heap_inuse_mb":  float64(metrics.Memory.HeapInuse) / 1024 / 1024,
+			"heap_objects":   metrics.Memory.HeapObjects,
+			"num_gc":         metrics.Memory.NumGC,
+		},
+		"components":      metrics.Components,
+		"unhealthy_count": unhealthyCount,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// systemMetrics 系统指标
+func (s *HTTPServer) systemMetrics(c *gin.Context) {
+	metrics := s.monitor.GetSystemMetrics()
+	customMetrics := s.monitor.GetAllCustomMetrics()
+
+	response := gin.H{
+		"timestamp": time.Now().Unix(),
+		"system": gin.H{
+			"uptime_seconds": metrics.Uptime,
+			"goroutines":     metrics.Goroutines,
+			"memory": gin.H{
+				"alloc_bytes":       metrics.Memory.Alloc,
+				"total_alloc_bytes": metrics.Memory.TotalAlloc,
+				"sys_bytes":         metrics.Memory.Sys,
+				"heap_alloc_bytes":  metrics.Memory.HeapAlloc,
+				"heap_sys_bytes":    metrics.Memory.HeapSys,
+				"heap_idle_bytes":   metrics.Memory.HeapIdle,
+				"heap_inuse_bytes":  metrics.Memory.HeapInuse,
+				"heap_objects":      metrics.Memory.HeapObjects,
+				"num_gc":            metrics.Memory.NumGC,
+			},
+		},
+		"requests": gin.H{
+			"total":                metrics.TotalRequests,
+			"active":               metrics.ActiveRequests,
+			"failed":               metrics.FailedRequests,
+			"avg_response_time_ns": metrics.AvgResponseTime.Nanoseconds(),
+			"avg_response_time_ms": float64(metrics.AvgResponseTime.Nanoseconds()) / 1000000,
+		},
+		"components": metrics.Components,
+		"custom":     customMetrics,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// componentHealth 组件健康状态
+func (s *HTTPServer) componentHealth(c *gin.Context) {
+	metrics := s.monitor.GetSystemMetrics()
+
+	// 支持查询参数过滤
+	component := c.Query("component")
+	if component != "" {
+		if status, exists := metrics.Components[component]; exists {
+			c.JSON(http.StatusOK, gin.H{
+				"component": component,
+				"status":    status,
+			})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":     "组件不存在",
+			"component": component,
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"timestamp":  time.Now().Unix(),
+		"components": metrics.Components,
 	})
 }
 
@@ -286,8 +475,8 @@ func (s *HTTPServer) playerLogin(c *gin.Context) {
 		"code":    0,
 		"message": "登录成功",
 		"data": gin.H{
-			"user_id":   "user123",
-			"token":     "jwt_token_here",
+			"user_id":    "user123",
+			"token":      "jwt_token_here",
 			"expires_at": time.Now().Add(24 * time.Hour).Unix(),
 		},
 	})
@@ -325,13 +514,13 @@ func (s *HTTPServer) getPlayer(c *gin.Context) {
 	s.logger.Info("获取玩家信息", "user_id", userID)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
-			"user_id":   userID,
-			"username":  "testuser",
-			"level":     10,
-			"coins":     1000,
+			"user_id":    userID,
+			"username":   "testuser",
+			"level":      10,
+			"coins":      1000,
 			"created_at": time.Now().Add(-24 * time.Hour).Unix(),
 		},
 	})
@@ -373,21 +562,21 @@ func (s *HTTPServer) getItems(c *gin.Context) {
 	s.logger.Info("获取道具列表", "user_id", userID, "game_id", gameID)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
 			"items": []gin.H{
 				{
-					"item_id":   "item001",
-					"name":      "金币",
-					"quantity":  1000,
-					"type":      "currency",
+					"item_id":  "item001",
+					"name":     "金币",
+					"quantity": 1000,
+					"type":     "currency",
 				},
 				{
-					"item_id":   "item002",
-					"name":      "钻石",
-					"quantity":  100,
-					"type":      "currency",
+					"item_id":  "item002",
+					"name":     "钻石",
+					"quantity": 100,
+					"type":     "currency",
 				},
 			},
 		},
@@ -434,13 +623,13 @@ func (s *HTTPServer) getItem(c *gin.Context) {
 	s.logger.Info("获取道具详情", "item_id", itemID)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
-			"item_id":   itemID,
-			"name":      "测试道具",
-			"quantity":  50,
-			"type":      "consumable",
+			"item_id":     itemID,
+			"name":        "测试道具",
+			"quantity":    50,
+			"type":        "consumable",
 			"description": "这是一个测试道具",
 		},
 	})
@@ -494,7 +683,7 @@ func (s *HTTPServer) getOrders(c *gin.Context) {
 	s.logger.Info("获取订单列表", "user_id", userID, "status", status)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
 			"orders": []gin.H{
@@ -551,7 +740,7 @@ func (s *HTTPServer) getOrder(c *gin.Context) {
 	s.logger.Info("获取订单详情", "order_id", orderID)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
 			"order_id":   orderID,
@@ -597,22 +786,22 @@ func (s *HTTPServer) getGames(c *gin.Context) {
 	s.logger.Info("获取游戏列表")
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
 			"games": []gin.H{
 				{
-					"game_id":   "game1",
-					"name":      "游戏1",
-					"status":    "active",
-					"players":   1250,
+					"game_id":    "game1",
+					"name":       "游戏1",
+					"status":     "active",
+					"players":    1250,
 					"created_at": time.Now().Add(-30 * 24 * time.Hour).Unix(),
 				},
 				{
-					"game_id":   "game2",
-					"name":      "游戏2",
-					"status":    "active",
-					"players":   890,
+					"game_id":    "game2",
+					"name":       "游戏2",
+					"status":     "active",
+					"players":    890,
 					"created_at": time.Now().Add(-15 * 24 * time.Hour).Unix(),
 				},
 			},
@@ -628,16 +817,16 @@ func (s *HTTPServer) getGameStats(c *gin.Context) {
 	s.logger.Info("获取游戏统计", "game_id", gameID)
 
 	c.JSON(200, gin.H{
-		"code": 0,
+		"code":    0,
 		"message": "获取成功",
 		"data": gin.H{
-			"game_id":           gameID,
-			"total_players":     1250,
-			"active_players":    450,
-			"total_orders":      5600,
-			"total_revenue":     125000,
-			"currency":          "CNY",
-			"last_updated":      time.Now().Unix(),
+			"game_id":        gameID,
+			"total_players":  1250,
+			"active_players": 450,
+			"total_orders":   5600,
+			"total_revenue":  125000,
+			"currency":       "CNY",
+			"last_updated":   time.Now().Unix(),
 		},
 	})
 }
@@ -646,7 +835,7 @@ func (s *HTTPServer) getGameStats(c *gin.Context) {
 func (s *HTTPServer) metrics(c *gin.Context) {
 	// TODO: 实现Prometheus监控指标
 	c.JSON(200, gin.H{
-		"status": "metrics endpoint - TODO",
+		"status":    "metrics endpoint - TODO",
 		"timestamp": time.Now().Unix(),
 	})
 }

@@ -219,12 +219,12 @@ func (w *Worker) run() {
 
 // TaskScheduler 任务调度器
 type TaskScheduler struct {
-	queue      Queue
-	workers    []*Worker
-	logger     logger.Logger
-	stopChan   chan struct{}
-	running    int32
-	mu         sync.RWMutex
+	queue    Queue
+	workers  []*Worker
+	logger   logger.Logger
+	stopChan chan struct{}
+	running  int32
+	mu       sync.RWMutex
 }
 
 // NewTaskScheduler 创建任务调度器

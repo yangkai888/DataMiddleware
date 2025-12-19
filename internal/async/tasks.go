@@ -52,9 +52,9 @@ func (t *LogTask) Execute(ctx context.Context) error {
 // BusinessTask 异步业务任务
 type BusinessTask struct {
 	BaseTask
-	Action    string                 `json:"action"`
-	Params    map[string]interface{} `json:"params"`
-	Callback  func(result interface{}, err error) `json:"-"` // 回调函数
+	Action   string                              `json:"action"`
+	Params   map[string]interface{}              `json:"params"`
+	Callback func(result interface{}, err error) `json:"-"` // 回调函数
 }
 
 func NewBusinessTask(id, action string, params map[string]interface{}, callback func(result interface{}, err error)) *BusinessTask {
@@ -99,9 +99,9 @@ func (t *BusinessTask) handleUserLogin(ctx context.Context) error {
 	// 调用回调函数
 	if t.Callback != nil {
 		t.Callback(map[string]interface{}{
-			"user_id":     userID,
-			"login_time":  time.Now(),
-			"status":      "success",
+			"user_id":    userID,
+			"login_time": time.Now(),
+			"status":     "success",
 		}, nil)
 	}
 
@@ -123,7 +123,7 @@ func (t *BusinessTask) handleSendNotification(ctx context.Context) error {
 
 	if t.Callback != nil {
 		t.Callback(map[string]string{
-			"status": "sent",
+			"status":  "sent",
 			"user_id": userID,
 		}, nil)
 	}
