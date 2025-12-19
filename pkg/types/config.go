@@ -40,6 +40,7 @@ type TCPConfig struct {
 	MaxConnections int           `mapstructure:"max_connections" yaml:"max_connections"`
 	ReadTimeout    time.Duration `mapstructure:"read_timeout" yaml:"read_timeout"`
 	WriteTimeout   time.Duration `mapstructure:"write_timeout" yaml:"write_timeout"`
+	Debug          bool          `mapstructure:"debug" yaml:"debug"` // 是否显示调试信息
 }
 
 // LoggerConfig 日志配置

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,18 +15,19 @@ import (
 
 // Connection TCP连接包装器
 type Connection struct {
-	ID            string                    `json:"id"`             // 连接ID
-	Conn          net.Conn                  `json:"-"`              // 底层TCP连接
-	State         types.ConnectionState     `json:"state"`          // 连接状态
-	Info          types.ConnectionInfo      `json:"info"`           // 连接信息
-	Config        types.ConnectionConfig    `json:"-"`              // 连接配置
-	Codec         Codec                     `json:"-"`              // 编解码器
-	Logger        logger.Logger             `json:"-"`              // 日志器
-	heartbeatTimer *time.Timer              `json:"-"`              // 心跳定时器
-	closeChan     chan struct{}             `json:"-"`              // 关闭通道
-	lastHeartbeat time.Time                 `json:"last_heartbeat"` // 最后心跳时间
+	ID               string                 `json:"id"`                // 连接ID
+	Conn             net.Conn               `json:"-"`                 // 底层TCP连接
+	State            types.ConnectionState  `json:"state"`             // 连接状态
+	Info             types.ConnectionInfo   `json:"info"`              // 连接信息
+	Config           types.ConnectionConfig `json:"-"`                 // 连接配置
+	Codec            Codec                  `json:"-"`                 // 编解码器
+	Logger           logger.Logger          `json:"-"`                 // 日志器
+	heartbeatTimer   *time.Timer            `json:"-"`                 // 心跳定时器
+	closeChan        chan struct{}          `json:"-"`                 // 关闭通道
+	lastHeartbeat    time.Time              `json:"last_heartbeat"`    // 最后心跳时间
 	missedHeartbeats int64                  `json:"missed_heartbeats"` // 连续丢失心跳次数
-	mu            sync.RWMutex              `json:"-"`              // 保护并发访问
+	readBuffer       []byte                 `json:"-"`                 // 读缓冲区，用于处理TCP粘包分包
+	mu               sync.RWMutex           `json:"-"`                 // 保护并发访问
 }
 
 // NewConnection 创建新连接
@@ -34,22 +36,22 @@ func NewConnection(conn net.Conn, config types.ConnectionConfig, codec Codec, lo
 	now := time.Now()
 
 	c := &Connection{
-		ID:   id,
-		Conn: conn,
+		ID:    id,
+		Conn:  conn,
 		State: types.StateConnecting,
 		Info: types.ConnectionInfo{
-			ID:              id,
-			RemoteAddr:      conn.RemoteAddr().String(),
-			LocalAddr:       conn.LocalAddr().String(),
-			State:           types.StateConnecting,
-			ConnectedAt:     now,
-			LastActivity:    now,
+			ID:           id,
+			RemoteAddr:   conn.RemoteAddr().String(),
+			LocalAddr:    conn.LocalAddr().String(),
+			State:        types.StateConnecting,
+			ConnectedAt:  now,
+			LastActivity: now,
 		},
-		Config:         config,
-		Codec:          codec,
-		Logger:         log,
-		closeChan:      make(chan struct{}),
-		lastHeartbeat:  now,
+		Config:           config,
+		Codec:            codec,
+		Logger:           log,
+		closeChan:        make(chan struct{}),
+		lastHeartbeat:    now,
 		missedHeartbeats: 0,
 	}
 
@@ -151,7 +153,7 @@ func (c *Connection) SendMessage(msg *types.Message) error {
 	return nil
 }
 
-// ReadMessage 读取消息
+// ReadMessage 读取消息，支持TCP粘包分包处理
 func (c *Connection) ReadMessage() (*types.Message, error) {
 	c.mu.RLock()
 	if c.State != types.StateConnected && c.State != types.StateAuthenticated {
@@ -160,33 +162,74 @@ func (c *Connection) ReadMessage() (*types.Message, error) {
 	}
 	c.mu.RUnlock()
 
-	// 设置读取超时
-	if c.Config.ReadTimeout > 0 {
-		c.Conn.SetReadDeadline(time.Now().Add(c.Config.ReadTimeout))
+	// 循环读取直到解析出完整消息
+	for {
+		// 如果缓冲区有足够数据，先尝试解析
+		if len(c.readBuffer) >= 28 { // 最小消息长度
+			msg, _, err := c.tryDecodeMessage()
+			if err == nil {
+				// 成功解析消息
+				atomic.AddInt64(&c.Info.MessagesReceived, 1)
+				c.updateActivity()
+				return msg, nil
+			}
+			// 如果不是数据不足的错误，返回错误
+			if !isInsufficientDataError(err) {
+				c.Logger.Error("解码消息失败", "conn_id", c.ID, "error", err, "buffer_size", len(c.readBuffer))
+				return nil, err
+			}
+			// 数据不足或校验和错误，继续读取更多数据
+		}
+
+		// 设置读取超时
+		if c.Config.ReadTimeout > 0 {
+			c.Conn.SetReadDeadline(time.Now().Add(c.Config.ReadTimeout))
+		}
+
+		// 读取更多数据
+		buffer := make([]byte, c.Config.BufferSize)
+		n, err := c.Conn.Read(buffer)
+		if err != nil {
+			return nil, err
+		}
+
+		// 累积到缓冲区
+		c.readBuffer = append(c.readBuffer, buffer[:n]...)
+		atomic.AddInt64(&c.Info.BytesReceived, int64(n))
+	}
+}
+
+// tryDecodeMessage 尝试从缓冲区解码消息
+func (c *Connection) tryDecodeMessage() (*types.Message, int, error) {
+	if len(c.readBuffer) == 0 {
+		return nil, 0, fmt.Errorf("缓冲区为空")
 	}
 
-	// 读取数据长度（简化实现，实际应该处理粘包和分包）
-	buffer := make([]byte, c.Config.BufferSize)
-	n, err := c.Conn.Read(buffer)
+	// 尝试解码消息
+	msg, consumed, err := c.Codec.Decode(c.readBuffer)
 	if err != nil {
-		return nil, err
+		return nil, consumed, err
 	}
 
-	data := buffer[:n]
-	atomic.AddInt64(&c.Info.BytesReceived, int64(n))
-
-	// 解码消息
-	msg, err := c.Codec.Decode(data)
-	if err != nil {
-		c.Logger.Error("解码消息失败", "conn_id", c.ID, "error", err)
-		return nil, err
+	// 从缓冲区移除已处理的字节
+	if consumed < len(c.readBuffer) {
+		c.readBuffer = c.readBuffer[consumed:]
+	} else {
+		c.readBuffer = nil
 	}
 
-	atomic.AddInt64(&c.Info.MessagesReceived, 1)
-	c.updateActivity()
+	return msg, consumed, nil
+}
 
-	c.Logger.Debug("接收消息成功", "conn_id", c.ID, "type", msg.Header.Type, "size", n)
-	return msg, nil
+// isInsufficientDataError 检查是否是数据不足的错误
+func isInsufficientDataError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "数据长度不足") ||
+		strings.Contains(errStr, "insufficient data") ||
+		strings.Contains(errStr, "无法解析")
 }
 
 // Authenticate 认证连接
@@ -277,11 +320,8 @@ func (c *Connection) checkHeartbeat() {
 		}
 	}
 
-	// 发送心跳消息
-	heartbeatMsg := CreateHeartbeatMessage(uint32(time.Now().UnixNano()))
-	if err := c.SendMessage(heartbeatMsg); err != nil {
-		c.Logger.Error("发送心跳失败", "conn_id", c.ID, "error", err)
-	}
+	// 重置missedHeartbeats计数（如果有活动）
+	atomic.StoreInt64(&c.missedHeartbeats, 0)
 }
 
 func (c *Connection) idleCheckLoop() {

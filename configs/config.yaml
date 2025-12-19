@@ -11,19 +11,20 @@ server:
     read_timeout: 30s
     write_timeout: 30s
     max_header_bytes: 1048576
-  # TCP服务器配置
-  tcp:
-    host: "0.0.0.0"
-    port: 9090
-    max_connections: 10000
-    read_timeout: 30s
-    write_timeout: 30s
+# TCP服务器配置
+tcp:
+  host: "0.0.0.0"
+  port: 9090
+  max_connections: 10000
+  read_timeout: 30s
+  write_timeout: 30s
+  debug: true  # 开发模式下显示详细调试信息
 
 # 日志配置
 logger:
   level: "info"  # debug, info, warn, error
   format: "json" # json, console
-  output: "stdout" # stdout, file
+  output: "file" # stdout, file
   file:
     path: "logs/datamiddleware.log"
     max_size: 100  # MB

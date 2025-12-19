@@ -6,11 +6,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"datamiddleware/internal/auth"
 	"datamiddleware/internal/config"
 	"datamiddleware/internal/database"
-	"datamiddleware/internal/logger"
 	"datamiddleware/internal/errors"
+	"datamiddleware/internal/logger"
+	"datamiddleware/internal/router"
 	"datamiddleware/internal/server"
+	"datamiddleware/internal/services"
 )
 
 func main() {
@@ -38,7 +41,7 @@ func main() {
 	_ = errorHandler // TODO: 在后续阶段使用错误处理器
 
 	// 初始化TCP服务器
-	tcpServer := server.NewTCPServer(cfg.Server.TCP, log)
+	tcpServer := server.NewTCPServer(cfg.Server, log)
 	if err := tcpServer.Start(); err != nil {
 		log.Error("TCP服务器启动失败", "error", err)
 		os.Exit(1)
@@ -59,6 +62,31 @@ func main() {
 
 	// 初始化DAO层
 	dao := database.NewDAO(db, log)
+
+	// 初始化业务服务
+	playerService := services.NewPlayerService(dao, log)
+	itemService := services.NewItemService(dao, log)
+	orderService := services.NewOrderService(dao, log)
+
+	// 初始化JWT服务
+	jwtService := auth.NewJWTService(cfg.JWT, log)
+	_ = jwtService // TODO: 在后续功能中使用JWT服务
+
+	// 初始化消息路由器
+	messageRouter := router.NewMessageRouter(log)
+
+	// 注册游戏处理器
+	game1Handler := services.NewGameHandler("game1", playerService, itemService, orderService, log)
+	game2Handler := services.NewGameHandler("game2", playerService, itemService, orderService, log)
+
+	if err := messageRouter.RegisterGameHandler("game1", game1Handler); err != nil {
+		log.Error("注册游戏处理器失败", "game_id", "game1", "error", err)
+		os.Exit(1)
+	}
+	if err := messageRouter.RegisterGameHandler("game2", game2Handler); err != nil {
+		log.Error("注册游戏处理器失败", "game_id", "game2", "error", err)
+		os.Exit(1)
+	}
 
 	// 初始化HTTP服务器
 	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao)

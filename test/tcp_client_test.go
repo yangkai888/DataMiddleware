@@ -23,6 +23,91 @@ func TestTCPClient(t *testing.T) {
 
 	codec := protocol.NewBinaryCodec()
 
+	// 测试编解码一致性
+	t.Run("CodecConsistency", func(t *testing.T) {
+		heartbeatMsg := protocol.CreateHeartbeatMessage(1)
+
+		// 编码消息
+		data, err := codec.Encode(heartbeatMsg)
+		if err != nil {
+			t.Fatalf("编码心跳消息失败: %v", err)
+		}
+
+		t.Logf("编码后消息长度: %d", len(data))
+		t.Logf("编码后消息数据: %x", data)
+
+		// 解析各个字段
+		t.Logf("版本: %x", data[0])
+		t.Logf("类型: %x", data[1:3])
+		t.Logf("标志: %x", data[3])
+		t.Logf("序列号: %x", data[4:8])
+		t.Logf("时间戳: %x", data[8:16])
+		t.Logf("体长度: %x", data[16:20])
+		t.Logf("校验和: %x", data[20:24])
+		t.Logf("游戏ID长度: %x", data[24:26])
+		t.Logf("用户ID长度: %x", data[26:28])
+
+		// 立即解码验证一致性
+		decoded, consumed, err := codec.Decode(data)
+		if err != nil {
+			t.Fatalf("解码心跳消息失败: %v", err)
+		}
+
+		t.Logf("解码消耗字节数: %d", consumed)
+		t.Logf("解码后消息类型: %v", decoded.Header.Type)
+		t.Logf("解码后序列号: %d", decoded.Header.SequenceID)
+
+		if decoded.Header.Type != types.MessageTypeHeartbeat {
+			t.Errorf("期望心跳消息，实际得到 %v", decoded.Header.Type)
+		}
+		if decoded.Header.SequenceID != 1 {
+			t.Errorf("期望序列号1，实际得到 %d", decoded.Header.SequenceID)
+		}
+	})
+
+	// 测试心跳（最简单的消息）
+	t.Run("SimpleHeartbeat", func(t *testing.T) {
+		heartbeatMsg := protocol.CreateHeartbeatMessage(1)
+
+		// 发送心跳消息
+		data, err := codec.Encode(heartbeatMsg)
+		if err != nil {
+			t.Fatalf("编码心跳消息失败: %v", err)
+		}
+
+		t.Logf("发送心跳消息，长度: %d", len(data))
+		t.Logf("消息数据: %x", data)
+
+		conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		n, err := conn.Write(data)
+		if err != nil {
+			t.Fatalf("发送心跳消息失败: %v", err)
+		}
+
+		t.Logf("实际发送字节数: %d", n)
+
+		// 读取响应
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buffer := make([]byte, 8192)
+		n, err = conn.Read(buffer)
+		if err != nil {
+			t.Fatalf("读取心跳响应失败: %v", err)
+		}
+
+		t.Logf("读取到响应，长度: %d", n)
+
+		response, _, err := codec.Decode(buffer[:n])
+		if err != nil {
+			t.Fatalf("解码心跳响应失败: %v", err)
+		}
+
+		if response.Header.Type != types.MessageTypeHeartbeat {
+			t.Errorf("期望心跳响应，实际得到 %v", response.Header.Type)
+		}
+
+		t.Logf("心跳成功: %+v", response.Header)
+	})
+
 	// 测试握手
 	t.Run("Handshake", func(t *testing.T) {
 		handshakeMsg := protocol.CreateHandshakeMessage("game1", "user123", 1)
@@ -47,7 +132,7 @@ func TestTCPClient(t *testing.T) {
 			t.Fatalf("读取握手响应失败: %v", err)
 		}
 
-		response, err := codec.Decode(buffer[:n])
+		response, _, err := codec.Decode(buffer[:n])
 		if err != nil {
 			t.Fatalf("解码握手响应失败: %v", err)
 		}
@@ -83,7 +168,7 @@ func TestTCPClient(t *testing.T) {
 			t.Fatalf("读取心跳响应失败: %v", err)
 		}
 
-		response, err := codec.Decode(buffer[:n])
+		response, _, err := codec.Decode(buffer[:n])
 		if err != nil {
 			t.Fatalf("解码心跳响应失败: %v", err)
 		}

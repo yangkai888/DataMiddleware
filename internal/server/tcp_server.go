@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,29 +14,30 @@ import (
 
 // TCPServer TCP服务器
 type TCPServer struct {
-	config      types.TCPConfig           `json:"config"`       // TCP配置
-	connManager *protocol.ConnectionManager `json:"-"`           // 连接管理器
-	logger      logger.Logger             `json:"-"`             // 日志器
-	listener    net.Listener              `json:"-"`             // 监听器
-	stopChan    chan struct{}             `json:"-"`             // 停止通道
-	wg          sync.WaitGroup            `json:"-"`             // 等待组
-	running     bool                      `json:"running"`      // 运行状态
-	mu          sync.RWMutex              `json:"-"`             // 保护并发访问
+	config       types.ServerConfig          `json:"config"`        // 服务器配置（包含环境信息）
+	connManager  *protocol.ConnectionManager `json:"-"`             // 连接管理器
+	logger       logger.Logger               `json:"-"`             // 日志器
+	listener     net.Listener                `json:"-"`             // 监听器
+	stopChan     chan struct{}               `json:"-"`             // 停止通道
+	wg           sync.WaitGroup              `json:"-"`             // 等待组
+	running      bool                        `json:"running"`       // 运行状态
+	shuttingDown bool                        `json:"shutting_down"` // 是否正在关闭
+	mu           sync.RWMutex                `json:"-"`             // 保护并发访问
 }
 
 // NewTCPServer 创建TCP服务器
-func NewTCPServer(config types.TCPConfig, log logger.Logger) *TCPServer {
+func NewTCPServer(config types.ServerConfig, log logger.Logger) *TCPServer {
 	// 创建连接配置
 	connConfig := types.ConnectionConfig{
-		MaxConnections: config.MaxConnections,
-		ReadTimeout:    config.ReadTimeout,
-		WriteTimeout:   config.WriteTimeout,
+		MaxConnections: config.TCP.MaxConnections,
+		ReadTimeout:    config.TCP.ReadTimeout,
+		WriteTimeout:   config.TCP.WriteTimeout,
 		BufferSize:     8192, // 8KB缓冲区
 		Heartbeat: types.HeartbeatConfig{
-			Enabled:  true,
-			Interval: 30 * time.Second, // 30秒心跳间隔
-			Timeout:  90 * time.Second, // 90秒超时
-			MaxMissed: 3,               // 最多丢失3次
+			Enabled:   true,
+			Interval:  30 * time.Second, // 30秒心跳间隔
+			Timeout:   90 * time.Second, // 90秒超时
+			MaxMissed: 3,                // 最多丢失3次
 		},
 		IdleTimeout:     300 * time.Second, // 5分钟空闲超时
 		CleanupInterval: 60 * time.Second,  // 60秒清理间隔
@@ -65,7 +67,7 @@ func (s *TCPServer) Start() error {
 	}
 
 	// 创建监听器
-	address := fmt.Sprintf("%s:%d", s.config.Host, s.config.Port)
+	address := fmt.Sprintf("%s:%d", s.config.TCP.Host, s.config.TCP.Port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("创建TCP监听器失败: %w", err)
@@ -97,13 +99,14 @@ func (s *TCPServer) Stop() error {
 
 	s.logger.Info("TCP服务器停止中...")
 
-	// 关闭停止通道
-	select {
-	case s.stopChan <- struct{}{}:
-	default:
-	}
+	// 标记为正在停止和关闭
+	s.running = false
+	s.shuttingDown = true
 
-	// 关闭监听器
+	// 先发送停止信号到所有协程，避免竞态条件
+	close(s.stopChan)
+
+	// 关闭监听器（这会让accept()立即返回错误）
 	if s.listener != nil {
 		s.listener.Close()
 	}
@@ -114,7 +117,6 @@ func (s *TCPServer) Stop() error {
 	// 等待所有协程退出
 	s.wg.Wait()
 
-	s.running = false
 	s.logger.Info("TCP服务器已停止")
 	return nil
 }
@@ -131,49 +133,97 @@ func (s *TCPServer) GetStats() ServerStats {
 	connStats := s.connManager.GetStats()
 
 	return ServerStats{
-		Running:           s.IsRunning(),
-		ConnectionCount:   connStats.TotalConnections,
-		GameConnections:   connStats.GameStats,
-		UserConnections:   connStats.UserStats,
-		StateConnections:  connStats.StateStats,
+		Running:          s.IsRunning(),
+		ConnectionCount:  connStats.TotalConnections,
+		GameConnections:  connStats.GameStats,
+		UserConnections:  connStats.UserStats,
+		StateConnections: connStats.StateStats,
 	}
 }
 
 // ServerStats 服务器统计信息
 type ServerStats struct {
-	Running           bool                              `json:"running"`             // 是否运行中
-	ConnectionCount   int                               `json:"connection_count"`    // 连接总数
-	GameConnections   map[string]int                   `json:"game_connections"`    // 按游戏分组的连接数
-	UserConnections   map[string]int                   `json:"user_connections"`    // 按用户分组的连接数
-	StateConnections  map[types.ConnectionState]int    `json:"state_connections"`   // 按状态分组的连接数
+	Running          bool                          `json:"running"`           // 是否运行中
+	ConnectionCount  int                           `json:"connection_count"`  // 连接总数
+	GameConnections  map[string]int                `json:"game_connections"`  // 按游戏分组的连接数
+	UserConnections  map[string]int                `json:"user_connections"`  // 按用户分组的连接数
+	StateConnections map[types.ConnectionState]int `json:"state_connections"` // 按状态分组的连接数
 }
 
 // acceptLoop 接受连接循环
 func (s *TCPServer) acceptLoop() {
-	defer s.wg.Done()
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("acceptLoop发生panic", "panic", r)
+		}
+		s.wg.Done()
+	}()
 
 	for {
 		select {
 		case <-s.stopChan:
+			s.logger.Debug("收到停止信号，退出accept循环")
 			return
 		default:
 			// 设置接受超时
-			s.listener.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second))
+			var timeout time.Duration
+			if s.config.Env == "dev" {
+				timeout = 10 * time.Second // 开发模式10秒超时，减少日志噪音
+			} else {
+				timeout = 30 * time.Second // 生产模式30秒超时
+			}
+			s.listener.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 
 			conn, err := s.listener.Accept()
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// 超时，继续循环
-					continue
+				// 检查是否服务器正在关闭，如果是则不记录错误
+				s.mu.RLock()
+				isShuttingDown := s.shuttingDown
+				s.mu.RUnlock()
+
+				if isShuttingDown {
+					s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
+					return
 				}
-				// 其他错误，检查是否是服务器停止导致的
+
+				// 检查是否是服务器停止导致的错误
 				select {
 				case <-s.stopChan:
+					s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
 					return
 				default:
-					s.logger.Error("接受连接失败", "error", err)
+				}
+
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// 超时是正常的，只有在调试模式下才记录
+					if s.config.TCP.Debug {
+						s.logger.Debug("TCP服务器等待连接超时，继续监听")
+					}
 					continue
 				}
+
+				// 检查是否是网络连接已关闭的错误（服务器正在关闭）
+				if opErr, ok := err.(*net.OpError); ok {
+					if opErr.Op == "accept" {
+						// 检查是否是监听器关闭导致的错误
+						if opErr.Err.Error() == "use of closed network connection" ||
+							strings.Contains(opErr.Err.Error(), "closed") ||
+							strings.Contains(opErr.Err.Error(), "shutdown") {
+							s.logger.Debug("TCP监听器已关闭或服务器正在关闭，停止接受连接")
+							return
+						}
+					}
+				}
+
+				// 对于accept相关的错误，在非调试模式下不记录（因为服务器关闭时会产生大量此类错误）
+				// 只在调试模式下记录警告级别的信息
+				if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
+					if s.config.TCP.Debug {
+						s.logger.Debug("TCP服务器接受连接遇到非致命错误", "error", err)
+					}
+					// 非调试模式下完全不记录accept相关的错误，避免噪音
+				}
+				continue
 			}
 
 			// 处理新连接
@@ -199,9 +249,14 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 
 // handleConnectionLoop 处理连接循环
 func (s *TCPServer) handleConnectionLoop(conn *protocol.Connection) {
-	defer s.wg.Done()
-	defer s.connManager.RemoveConnection(conn.ID)
-	defer conn.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("handleConnectionLoop发生panic", "conn_id", conn.ID, "panic", r)
+		}
+		s.wg.Done()
+		s.connManager.RemoveConnection(conn.ID)
+		conn.Close()
+	}()
 
 	s.logger.Info("开始处理连接", "conn_id", conn.ID)
 
@@ -222,6 +277,7 @@ func (s *TCPServer) handleConnectionLoop(conn *protocol.Connection) {
 			}
 
 			// 处理消息
+			s.logger.Debug("处理消息", "conn_id", conn.ID, "type", msg.Header.Type, "seq", msg.Header.SequenceID)
 			s.handleMessage(conn, msg)
 		}
 	}
