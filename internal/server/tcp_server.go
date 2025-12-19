@@ -247,6 +247,19 @@ func (s *TCPServer) handleConnection(conn net.Conn) {
 	go s.handleConnectionLoop(connection)
 }
 
+// isConnectionClosedError 检查是否是连接关闭相关的错误
+func isConnectionClosedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection reset by peer") ||
+		   strings.Contains(errStr, "broken pipe") ||
+		   strings.Contains(errStr, "connection refused") ||
+		   strings.Contains(errStr, "connection closed") ||
+		   strings.Contains(errStr, "EOF")
+}
+
 // handleConnectionLoop 处理连接循环
 func (s *TCPServer) handleConnectionLoop(conn *protocol.Connection) {
 	defer func() {
@@ -270,6 +283,8 @@ func (s *TCPServer) handleConnectionLoop(conn *protocol.Connection) {
 			if err != nil {
 				if err == protocol.ErrConnectionClosed {
 					s.logger.Info("连接已关闭", "conn_id", conn.ID)
+				} else if isConnectionClosedError(err) {
+					s.logger.Debug("连接被客户端关闭", "conn_id", conn.ID, "error", err)
 				} else {
 					s.logger.Error("读取消息失败", "conn_id", conn.ID, "error", err)
 				}
@@ -308,7 +323,12 @@ func (s *TCPServer) handleHeartbeat(conn *protocol.Connection, msg *types.Messag
 	// 回复心跳
 	response := protocol.CreateHeartbeatMessage(msg.Header.SequenceID)
 	if err := conn.SendMessage(response); err != nil {
-		s.logger.Error("发送心跳回复失败", "conn_id", conn.ID, "error", err)
+		// 检查是否是连接被客户端重置的正常情况
+		if isConnectionClosedError(err) {
+			s.logger.Debug("客户端已断开，跳过心跳回复", "conn_id", conn.ID)
+		} else {
+			s.logger.Error("发送心跳回复失败", "conn_id", conn.ID, "error", err)
+		}
 	}
 }
 

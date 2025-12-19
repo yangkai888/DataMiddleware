@@ -106,6 +106,23 @@ func TestTCPClient(t *testing.T) {
 		}
 
 		t.Logf("心跳成功: %+v", response.Header)
+
+		// 故意断开连接而不等待，模拟之前的错误情况
+		conn.Close()
+		time.Sleep(100 * time.Millisecond) // 给服务器一点时间处理
+
+		// 尝试发送另一个消息，应该会失败
+		heartbeatMsg2 := protocol.CreateHeartbeatMessage(2)
+		data2, err := codec.Encode(heartbeatMsg2)
+		if err != nil {
+			t.Logf("编码第二个心跳消息失败: %v", err)
+			return
+		}
+
+		_, err = conn.Write(data2)
+		if err != nil {
+			t.Logf("发送第二个心跳消息失败（预期）: %v", err)
+		}
 	})
 
 	// 测试握手
