@@ -160,75 +160,85 @@ func (s *TCPServer) acceptLoop() {
 	}()
 
 	for {
+		// 设置接受超时
+		var timeout time.Duration
 		select {
 		case <-s.stopChan:
-			s.logger.Debug("收到停止信号，退出accept循环")
-			return
+			// 服务器正在停止，设置很短的超时以便快速退出
+			timeout = 10 * time.Millisecond
+			s.listener.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
 		default:
-			// 设置接受超时
-			var timeout time.Duration
 			if s.config.Env == "dev" {
 				timeout = 10 * time.Second // 开发模式10秒超时，减少日志噪音
 			} else {
 				timeout = 30 * time.Second // 生产模式30秒超时
 			}
 			s.listener.(*net.TCPListener).SetDeadline(time.Now().Add(timeout))
+		}
 
-			conn, err := s.listener.Accept()
-			if err != nil {
-				// 检查是否服务器正在关闭，如果是则不记录错误
-				s.mu.RLock()
-				isShuttingDown := s.shuttingDown
-				s.mu.RUnlock()
+		conn, err := s.listener.Accept()
 
-				if isShuttingDown {
-					s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
-					return
-				}
+		// 检查是否收到停止信号
+		select {
+		case <-s.stopChan:
+			s.logger.Debug("收到停止信号，退出accept循环")
+			return
+		default:
+		}
 
-				// 检查是否是服务器停止导致的错误
-				select {
-				case <-s.stopChan:
-					s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
-					return
-				default:
-				}
+		if err != nil {
+			// 检查是否服务器正在关闭，如果是则不记录错误
+			s.mu.RLock()
+			isShuttingDown := s.shuttingDown
+			s.mu.RUnlock()
 
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// 超时是正常的，只有在调试模式下才记录
-					if s.config.TCP.Debug {
-						s.logger.Debug("TCP服务器等待连接超时，继续监听")
-					}
-					continue
-				}
+			if isShuttingDown {
+				s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
+				return
+			}
 
-				// 检查是否是网络连接已关闭的错误（服务器正在关闭）
-				if opErr, ok := err.(*net.OpError); ok {
-					if opErr.Op == "accept" {
-						// 检查是否是监听器关闭导致的错误
-						if opErr.Err.Error() == "use of closed network connection" ||
-							strings.Contains(opErr.Err.Error(), "closed") ||
-							strings.Contains(opErr.Err.Error(), "shutdown") {
-							s.logger.Debug("TCP监听器已关闭或服务器正在关闭，停止接受连接")
-							return
-						}
-					}
-				}
+			// 检查是否是服务器停止导致的错误
+			select {
+			case <-s.stopChan:
+				s.logger.Debug("TCP服务器正在关闭，停止接受新连接")
+				return
+			default:
+			}
 
-				// 对于accept相关的错误，在非调试模式下不记录（因为服务器关闭时会产生大量此类错误）
-				// 只在调试模式下记录警告级别的信息
-				if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
-					if s.config.TCP.Debug {
-						s.logger.Debug("TCP服务器接受连接遇到非致命错误", "error", err)
-					}
-					// 非调试模式下完全不记录accept相关的错误，避免噪音
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// 超时是正常的，只有在调试模式下才记录
+				if s.config.TCP.Debug {
+					s.logger.Debug("TCP服务器等待连接超时，继续监听")
 				}
 				continue
 			}
 
-			// 处理新连接
-			s.handleConnection(conn)
+			// 检查是否是网络连接已关闭的错误（服务器正在关闭）
+			if opErr, ok := err.(*net.OpError); ok {
+				if opErr.Op == "accept" {
+					// 检查是否是监听器关闭导致的错误
+					if opErr.Err.Error() == "use of closed network connection" ||
+						strings.Contains(opErr.Err.Error(), "closed") ||
+						strings.Contains(opErr.Err.Error(), "shutdown") {
+						s.logger.Debug("TCP监听器已关闭或服务器正在关闭，停止接受连接")
+						return
+					}
+				}
+			}
+
+			// 对于accept相关的错误，在非调试模式下不记录（因为服务器关闭时会产生大量此类错误）
+			// 只在调试模式下记录警告级别的信息
+			if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
+				if s.config.TCP.Debug {
+					s.logger.Debug("TCP服务器接受连接遇到非致命错误", "error", err)
+				}
+				// 非调试模式下完全不记录accept相关的错误，避免噪音
+			}
+			continue
 		}
+
+		// 处理新连接
+		s.handleConnection(conn)
 	}
 }
 
