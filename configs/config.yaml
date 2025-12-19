@@ -1,0 +1,107 @@
+# 数据中间件配置文件
+
+# 服务器配置
+server:
+  # 服务器环境: dev, test, prod
+  env: dev
+  # HTTP服务器配置
+  http:
+    host: "0.0.0.0"
+    port: 8080
+    read_timeout: 30s
+    write_timeout: 30s
+    max_header_bytes: 1048576
+  # TCP服务器配置
+  tcp:
+    host: "0.0.0.0"
+    port: 9090
+    max_connections: 10000
+    read_timeout: 30s
+    write_timeout: 30s
+
+# 日志配置
+logger:
+  level: "info"  # debug, info, warn, error
+  format: "json" # json, console
+  output: "stdout" # stdout, file
+  file:
+    path: "logs/datamiddleware.log"
+    max_size: 100  # MB
+    max_age: 30    # days
+    max_backups: 10
+    compress: true
+
+# 数据库配置
+database:
+  # 主数据库
+  primary:
+    driver: "mysql" # mysql, oracle
+    host: "localhost"
+    port: 3306
+    username: "root"
+    password: "password"
+    database: "datamiddleware"
+    charset: "utf8mb4"
+    max_open_conns: 100
+    max_idle_conns: 10
+    conn_max_lifetime: 300s
+  # 从数据库 (可选)
+  replica:
+    - driver: "mysql"
+      host: "localhost"
+      port: 3307
+      username: "root"
+      password: "password"
+      database: "datamiddleware"
+      charset: "utf8mb4"
+      max_open_conns: 50
+      max_idle_conns: 5
+      conn_max_lifetime: 300s
+
+# Redis缓存配置
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+  min_idle_conns: 2
+  conn_max_lifetime: 300s
+  read_timeout: 3s
+  write_timeout: 3s
+
+# 本地缓存配置
+cache:
+  local:
+    size: 1000  # 最大缓存条目数
+    ttl: 3600   # 默认TTL(秒)
+
+# JWT配置
+jwt:
+  secret: "your-secret-key-change-in-production"
+  expire: 86400  # token过期时间(秒)
+
+# 游戏路由配置
+games:
+  - id: "game1"
+    name: "游戏1"
+    enabled: true
+    tcp_port: 9101
+    http_prefix: "/api/game1"
+  - id: "game2"
+    name: "游戏2"
+    enabled: true
+    tcp_port: 9102
+    http_prefix: "/api/game2"
+
+# 监控配置
+monitor:
+  enabled: true
+  port: 9091
+  path: "/metrics"
+
+# 健康检查配置
+health:
+  enabled: true
+  path: "/health"
+  check_interval: 30s
