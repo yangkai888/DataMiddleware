@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"datamiddleware/internal/async"
 	"datamiddleware/internal/auth"
 	"datamiddleware/internal/cache"
 	"datamiddleware/internal/config"
@@ -80,6 +81,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 初始化异步任务调度器
+	queue := async.NewPriorityQueue(1000, log)
+	taskScheduler := async.NewTaskScheduler(queue, 4, log)
+	if err := taskScheduler.Start(); err != nil {
+		log.Error("任务调度器启动失败", "error", err)
+		os.Exit(1)
+	}
+
 	// 初始化消息路由器
 	messageRouter := router.NewMessageRouter(log)
 
@@ -97,7 +106,7 @@ func main() {
 	}
 
 	// 初始化HTTP服务器
-	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao, jwtService, playerService, itemService, orderService)
+	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao, jwtService, playerService, itemService, orderService, cacheManager, taskScheduler)
 	if err := httpServer.Start(); err != nil {
 		log.Error("HTTP服务器启动失败", "error", err)
 		os.Exit(1)
@@ -135,6 +144,11 @@ func main() {
 	// 关闭数据库连接
 	if err := db.Close(); err != nil {
 		log.Error("数据库关闭失败", "error", err)
+	}
+
+	// 关闭任务调度器
+	if err := taskScheduler.Stop(); err != nil {
+		log.Error("任务调度器关闭失败", "error", err)
 	}
 
 	// 关闭缓存管理器

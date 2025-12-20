@@ -30,6 +30,13 @@ type BaseTask struct {
 	Data     interface{}
 }
 
+// Execute 执行任务
+func (t *BaseTask) Execute(ctx context.Context) error {
+	// 基础任务实现，打印任务信息
+	fmt.Printf("执行任务: ID=%s, Type=%s, Priority=%d, Data=%v\n", t.ID, t.Type, t.Priority, t.Data)
+	return nil
+}
+
 func (t *BaseTask) GetID() string {
 	return t.ID
 }

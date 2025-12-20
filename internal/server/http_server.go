@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"datamiddleware/internal/async"
 	"datamiddleware/internal/auth"
+	"datamiddleware/internal/cache"
 	"datamiddleware/internal/database"
 	"datamiddleware/internal/errors"
 	"datamiddleware/internal/logger"
@@ -30,10 +33,12 @@ type HTTPServer struct {
 	playerService *services.PlayerService `json:"-"`  // 玩家服务
 	itemService   *services.ItemService   `json:"-"`  // 道具服务
 	orderService  *services.OrderService  `json:"-"`  // 订单服务
+	cacheManager *cache.Manager          `json:"-"`  // 缓存管理器
+	taskScheduler *async.TaskScheduler   `json:"-"`  // 任务调度器
 }
 
 // NewHTTPServer 创建HTTP服务器
-func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *errors.ErrorHandler, dao database.DAO, jwtService *auth.JWTService, playerService *services.PlayerService, itemService *services.ItemService, orderService *services.OrderService) *HTTPServer {
+func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *errors.ErrorHandler, dao database.DAO, jwtService *auth.JWTService, playerService *services.PlayerService, itemService *services.ItemService, orderService *services.OrderService, cacheManager *cache.Manager, taskScheduler *async.TaskScheduler) *HTTPServer {
 	// 根据环境设置Gin模式
 	switch config.Env {
 	case "prod":
@@ -60,6 +65,8 @@ func NewHTTPServer(config types.ServerConfig, log logger.Logger, errorHandler *e
 		playerService: playerService,
 		itemService:   itemService,
 		orderService:  orderService,
+		cacheManager:  cacheManager,
+		taskScheduler: taskScheduler,
 	}
 
 	// 设置中间件
@@ -196,6 +203,33 @@ func (s *HTTPServer) setupRoutes() {
 			games.GET("", s.getGames)
 			games.GET("/:id/stats", s.getGameStats)
 		}
+
+		// 缓存相关接口
+		cache := v1.Group("/cache")
+		{
+			cache.POST("/set", s.setCache)
+			cache.GET("/get", s.getCache)
+			cache.POST("/set-json", s.setCacheJSON)
+			cache.GET("/get-json", s.getCacheJSON)
+			cache.DELETE("/delete", s.deleteCache)
+			cache.GET("/exists", s.existsCache)
+			cache.POST("/warmup", s.warmupCache)
+			cache.GET("/protection/stats", s.getProtectionStats)
+			cache.POST("/invalidate", s.invalidateCache)
+		}
+
+		// 异步任务接口
+		async := v1.Group("/async")
+		{
+			async.POST("/task", s.submitTask)
+			async.GET("/stats", s.getAsyncStats)
+		}
+
+		// 监控接口
+		monitor := v1.Group("/monitor")
+		{
+			monitor.GET("/metrics", s.getSystemMetrics)
+		}
 	}
 
 	// 监控接口
@@ -280,7 +314,7 @@ func (s *HTTPServer) corsMiddleware() gin.HandlerFunc {
 // authMiddleware 认证中间件
 func (s *HTTPServer) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 跳过健康检查、监控和认证相关接口
+		// 跳过健康检查、监控、认证、缓存和异步相关接口
 		if c.Request.URL.Path == "/api/v1/health" ||
 			c.Request.URL.Path == "/health" ||
 			c.Request.URL.Path == "/health/detailed" ||
@@ -290,7 +324,10 @@ func (s *HTTPServer) authMiddleware() gin.HandlerFunc {
 			c.Request.URL.Path == "/api/v1/metrics" ||
 			c.Request.URL.Path == "/api/v1/health/components" ||
 			c.Request.URL.Path == "/api/v1/players/register" ||
-			c.Request.URL.Path == "/api/v1/players/login" {
+			c.Request.URL.Path == "/api/v1/players/login" ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/v1/cache/") ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/v1/async/") ||
+			strings.HasPrefix(c.Request.URL.Path, "/api/v1/monitor/") {
 			c.Next()
 			return
 		}
@@ -1020,5 +1057,332 @@ func (s *HTTPServer) websocketHandler(c *gin.Context) {
 	c.JSON(501, gin.H{
 		"code":    501,
 		"message": "WebSocket功能尚未实现",
+	})
+}
+
+// ==================== 缓存相关Handler ====================
+
+// setCache 设置缓存
+func (s *HTTPServer) setCache(c *gin.Context) {
+	var req struct {
+		Key   string `json:"key" binding:"required"`
+		Value string `json:"value" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "参数绑定失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	err := s.cacheManager.Set(req.Key, []byte(req.Value))
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "缓存设置失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "缓存设置成功",
+	})
+}
+
+// getCache 获取缓存
+func (s *HTTPServer) getCache(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "缺少key参数",
+		})
+		return
+	}
+
+	value, err := s.cacheManager.Get(key)
+	if err != nil {
+		if err.Error() == "cache miss" {
+			c.JSON(404, gin.H{
+				"code":    404,
+				"message": "缓存未找到",
+			})
+			return
+		}
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"value":   string(value),
+	})
+}
+
+// setCacheJSON 设置JSON缓存
+func (s *HTTPServer) setCacheJSON(c *gin.Context) {
+	var req struct {
+		Key   string      `json:"key" binding:"required"`
+		Value interface{} `json:"value" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "参数绑定失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	err := s.cacheManager.SetJSON(req.Key, req.Value)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "JSON缓存设置失败",
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "JSON缓存设置成功",
+	})
+}
+
+// getCacheJSON 获取JSON缓存
+func (s *HTTPServer) getCacheJSON(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "缺少key参数",
+		})
+		return
+	}
+
+	var value interface{}
+	err := s.cacheManager.GetJSON(key, &value)
+	if err != nil {
+		if err.Error() == "cache miss" {
+			c.JSON(404, gin.H{
+				"code":    404,
+				"message": "缓存未找到",
+			})
+			return
+		}
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"value":   value,
+	})
+}
+
+// deleteCache 删除缓存
+func (s *HTTPServer) deleteCache(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "缺少key参数",
+		})
+		return
+	}
+
+	err := s.cacheManager.Delete(key)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "缓存删除成功",
+	})
+}
+
+// existsCache 检查缓存是否存在
+func (s *HTTPServer) existsCache(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "缺少key参数",
+		})
+		return
+	}
+
+	exists := s.cacheManager.Exists(key)
+	c.JSON(200, gin.H{
+		"success": true,
+		"exists":  exists,
+	})
+}
+
+// warmupCache 缓存预热
+func (s *HTTPServer) warmupCache(c *gin.Context) {
+	warmup := cache.NewDefaultWarmup(s.logger)
+	err := s.cacheManager.WarmupCache(warmup)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "缓存预热完成",
+	})
+}
+
+// getProtectionStats 获取缓存防护统计
+func (s *HTTPServer) getProtectionStats(c *gin.Context) {
+	stats := s.cacheManager.GetProtectionStats()
+	c.JSON(200, gin.H{
+		"success": true,
+		"stats":   stats,
+	})
+}
+
+// invalidateCache 缓存失效
+func (s *HTTPServer) invalidateCache(c *gin.Context) {
+	var req struct {
+		Pattern string `json:"pattern"`
+		Prefix  string `json:"prefix"`
+		Keys    []string `json:"keys"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	var err error
+	if req.Pattern != "" {
+		err = s.cacheManager.InvalidateByPattern(req.Pattern)
+	} else if req.Prefix != "" {
+		err = s.cacheManager.InvalidateByPrefix(req.Prefix)
+	} else if len(req.Keys) > 0 {
+		err = s.cacheManager.BatchInvalidate(req.Keys)
+	} else {
+		c.JSON(400, gin.H{
+			"code":    400,
+			"message": "需要指定pattern、prefix或keys之一",
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "缓存失效完成",
+	})
+}
+
+// ==================== 异步处理相关Handler ====================
+
+// submitTask 提交异步任务
+func (s *HTTPServer) submitTask(c *gin.Context) {
+	var req struct {
+		ID       string      `json:"id" binding:"required"`
+		Type     string      `json:"type" binding:"required"`
+		Priority int         `json:"priority"`
+		Data     interface{} `json:"data"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	task := &async.BaseTask{
+		ID:       req.ID,
+		Type:     req.Type,
+		Priority: req.Priority,
+		Data:     req.Data,
+	}
+
+	err := s.taskScheduler.SubmitTask(task)
+	if err != nil {
+		c.JSON(500, gin.H{
+			"code":    500,
+			"message": "操作失败",
+			"error":   err.Error(),
+		})
+		return
+		return
+	}
+
+	c.JSON(200, gin.H{
+		"success": true,
+		"message": "任务提交成功",
+		"task_id": req.ID,
+	})
+}
+
+// getAsyncStats 获取异步处理统计
+func (s *HTTPServer) getAsyncStats(c *gin.Context) {
+	stats := s.taskScheduler.GetStats()
+	c.JSON(200, gin.H{
+		"success": true,
+		"stats":   stats,
+	})
+}
+
+// ==================== 监控相关Handler ====================
+
+// getSystemMetrics 获取系统指标
+func (s *HTTPServer) getSystemMetrics(c *gin.Context) {
+	metrics := s.monitor.GetSystemMetrics()
+	c.JSON(200, gin.H{
+		"success": true,
+		"metrics": metrics,
 	})
 }
