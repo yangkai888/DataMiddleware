@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # 数据中间件节点1
+  datamiddleware-1:
+    build: .
+    container_name: datamiddleware-node1
+    environment:
+      - NODE_ID=1
+    ports:
+      - "8081:8080"  # HTTP端口
+      - "9091:9090"  # TCP端口
+    depends_on:
+      - redis
+      - mysql
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  # 数据中间件节点2
+  datamiddleware-2:
+    build: .
+    container_name: datamiddleware-node2
+    environment:
+      - NODE_ID=2
+    ports:
+      - "8082:8080"  # HTTP端口
+      - "9092:9090"  # TCP端口
+    depends_on:
+      - redis
+      - mysql
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  # Redis缓存 (共享存储)
+  redis:
+    image: redis:7-alpine
+    container_name: datamiddleware-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  # MySQL数据库 (主库)
+  mysql:
+    image: mysql:8.0
+    container_name: datamiddleware-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: MySQL@123456
+      MYSQL_DATABASE: datamiddleware
+      MYSQL_USER: datamiddleware
+      MYSQL_PASSWORD: DataMiddleware@123
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+  # Nginx负载均衡器
+  load-balancer:
+    image: nginx:alpine
+    container_name: datamiddleware-lb
+    ports:
+      - "80:80"    # HTTP端口
+      - "9090:9090" # TCP端口 (如果需要)
+    volumes:
+      - ./nginx-cluster.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - datamiddleware-1
+      - datamiddleware-2
+    networks:
+      - cluster-net
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  mysql_data:
+
+networks:
+  cluster-net:
+    driver: bridge
