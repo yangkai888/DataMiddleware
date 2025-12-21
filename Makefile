@@ -43,8 +43,37 @@ perf-test-simple:
 perf-test-full:
 	$(GOCMD) run test/performance_test.go
 
-# Run all performance tests
+# Demo programs
+demo-async:
+	$(GOCMD) run test/async_demo.go
+
+demo-benchmark:
+	$(GOCMD) run test/benchmark_demo.go
+
+demo-goroutine-pool:
+	$(GOCMD) run test/goroutine_pool_demo.go
+
+demo-memory:
+	$(GOCMD) run test/memory_demo.go
+
+demo-performance:
+	$(GOCMD) run test/performance_benchmark.go
+
+demo-simple-perf:
+	$(GOCMD) run test/simple_perf.go
+
+demo-tcp-perf:
+	$(GOCMD) run test/tcp_perf.go
+
+demo-tcp-simple:
+	$(GOCMD) run test/tcp_simple.go
+
+# Run all demos
+demos: demo-async demo-benchmark demo-goroutine-pool demo-memory demo-performance demo-simple-perf demo-tcp-perf demo-tcp-simple
+
+# Run all performance tests and demos
 perf-tests: perf-test-tcp perf-test-async perf-test-simple perf-test-full
+all-tests: test perf-tests demos
 
 # Clean
 clean:
