@@ -8,6 +8,7 @@
 # Go build output
 datamiddleware
 datamiddleware_unix
+bin/
 
 # Test binary, built with `go test -c`
 *.test
