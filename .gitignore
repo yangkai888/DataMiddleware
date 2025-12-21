@@ -38,7 +38,11 @@ Thumbs.db
 
 # Logs
 *.log
+*.log.*
 logs/
+*.log.gz
+*.log.bz2
+*.log.xz
 
 # Configuration files with secrets
 config.local.yml
