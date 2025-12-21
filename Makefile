@@ -30,6 +30,22 @@ test-coverage:
 	$(GOTEST) -race -coverprofile=coverage.out -covermode=atomic ./...
 	$(GOCMD) tool cover -html=coverage.out -o coverage.html
 
+# Performance tests
+perf-test-tcp:
+	$(GOCMD) run test/tcp_performance_test.go
+
+perf-test-async:
+	$(GOCMD) run test/async_test.go
+
+perf-test-simple:
+	$(GOCMD) run test/tcp_test.go
+
+perf-test-full:
+	$(GOCMD) run test/performance_test.go
+
+# Run all performance tests
+perf-tests: perf-test-tcp perf-test-async perf-test-simple perf-test-full
+
 # Clean
 clean:
 	$(GOCLEAN)
