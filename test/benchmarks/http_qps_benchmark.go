@@ -18,14 +18,14 @@ import (
 
 // 测试配置
 type HTTPBenchmarkConfig struct {
-	TargetURL       string
-	Duration        time.Duration
-	Concurrency     int
-	Connections     int
+	TargetURL        string
+	Duration         time.Duration
+	Concurrency      int
+	Connections      int
 	DisableKeepAlive bool
-	Timeout         time.Duration
-	Method          string
-	Headers         map[string]string
+	Timeout          time.Duration
+	Method           string
+	Headers          map[string]string
 }
 
 // 测试结果
@@ -47,12 +47,12 @@ type HTTPBenchmarkResult struct {
 
 // 响应时间统计
 type ResponseTimeStats struct {
-	mu         sync.Mutex
-	times      []time.Duration
-	totalTime  time.Duration
-	minTime    time.Duration
-	maxTime    time.Duration
-	count      int64
+	mu        sync.Mutex
+	times     []time.Duration
+	totalTime time.Duration
+	minTime   time.Duration
+	maxTime   time.Duration
+	count     int64
 }
 
 func (s *ResponseTimeStats) Add(duration time.Duration) {
@@ -291,14 +291,14 @@ func main() {
 	}
 
 	config := HTTPBenchmarkConfig{
-		TargetURL:       targetURL,
-		Duration:        duration,
-		Concurrency:     concurrency,
-		Connections:     concurrency * 2, // 连接数是并发数的2倍
+		TargetURL:        targetURL,
+		Duration:         duration,
+		Concurrency:      concurrency,
+		Connections:      concurrency * 2, // 连接数是并发数的2倍
 		DisableKeepAlive: false,
-		Timeout:         30 * time.Second,
-		Method:          "GET",
-		Headers:         map[string]string{
+		Timeout:          30 * time.Second,
+		Method:           "GET",
+		Headers: map[string]string{
 			"User-Agent": "DataMiddleware-Benchmark/1.0",
 			"Accept":     "*/*",
 		},

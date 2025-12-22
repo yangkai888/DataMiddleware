@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -194,6 +195,18 @@ func createTCPMessage(config TCPBenchmarkConfig, sequenceID uint32) ([]byte, err
 }
 
 // TCP客户端worker
+// tcpWorkerLoop 在测试期间持续发送请求的worker
+func tcpWorkerLoop(ctx context.Context, id int, config TCPBenchmarkConfig, stats *TCPResponseTimeStats, results *TCPBenchmarkResult, semaphore chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			tcpWorker(id, config, stats, results, semaphore)
+		}
+	}
+}
+
 func tcpWorker(id int, config TCPBenchmarkConfig, stats *TCPResponseTimeStats, results *TCPBenchmarkResult, semaphore chan struct{}) {
 	defer atomic.AddInt64(&results.TotalRequests, 1)
 
@@ -265,13 +278,15 @@ func RunTCPBenchmark(config TCPBenchmarkConfig) (*TCPBenchmarkResult, error) {
 	semaphore := make(chan struct{}, 500)
 
 	var wg sync.WaitGroup
+	ctx, cancel := context.WithTimeout(context.Background(), config.Duration)
+	defer cancel()
 
-	// 启动workers
+	// 启动workers - 每个worker在测试期间持续发送请求
 	for i := 0; i < config.Concurrency; i++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			tcpWorker(workerID, config, stats, result, semaphore)
+			tcpWorkerLoop(ctx, workerID, config, stats, result, semaphore)
 		}(i)
 	}
 
@@ -280,7 +295,10 @@ func RunTCPBenchmark(config TCPBenchmarkConfig) (*TCPBenchmarkResult, error) {
 
 	// 计算结果
 	actualDuration := result.EndTime.Sub(result.StartTime)
-	result.QPS = float64(result.TotalRequests) / actualDuration.Seconds()
+	if actualDuration.Seconds() > 0 {
+		// QPS基于成功请求数计算，而不是总请求数
+		result.QPS = float64(result.SuccessfulRequests) / actualDuration.Seconds()
+	}
 
 	// 计算响应时间统计
 	p50, p95, p99 := stats.CalculatePercentiles()

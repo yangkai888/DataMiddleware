@@ -3,7 +3,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"log"
@@ -88,8 +87,13 @@ func createSimpleHeartbeatMessage() ([]byte, error) {
 
 	// 消息体 (空)
 
-	// 计算校验和 (对整个消息进行CRC32)
-	checksum := crc32.ChecksumIEEE(buffer[:totalLen])
+	// 计算校验和 (按照服务器BinaryCodec的方式)
+	// 校验和字段位置: 20-24字节
+	// checksumData = buffer[:20] + buffer[24:]
+	checksumData := make([]byte, 0, totalLen-4)
+	checksumData = append(checksumData, buffer[:checksumOffset]...)   // 校验和字段之前的数据
+	checksumData = append(checksumData, buffer[checksumOffset+4:]...) // 校验和字段之后的数据
+	checksum := crc32.ChecksumIEEE(checksumData)
 	binary.BigEndian.PutUint32(buffer[checksumOffset:checksumOffset+4], checksum)
 
 	fmt.Printf("发送消息详情 (二进制协议):\n")
@@ -149,14 +153,47 @@ func main() {
 	fmt.Printf("✅ 收到响应: %d 字节\n", n)
 	fmt.Printf("响应数据 (十六进制): %x\n", responseBuffer[:n])
 
-	// 尝试解析响应
-	if n >= 4 {
-		headerLen := binary.BigEndian.Uint32(responseBuffer[0:4])
-		fmt.Printf("响应消息头长度: %d\n", headerLen)
+	// 解析二进制响应消息
+	if n >= 28 { // 最小消息长度
+		offset := 0
 
-		if n >= int(4+headerLen) {
-			headerData := responseBuffer[4 : 4+headerLen]
-			fmt.Printf("响应消息头JSON: %s\n", string(headerData))
-		}
+		// 版本
+		version := responseBuffer[offset]
+		offset++
+		fmt.Printf("响应版本: %d\n", version)
+
+		// 类型
+		msgType := binary.BigEndian.Uint16(responseBuffer[offset : offset+2])
+		offset += 2
+		fmt.Printf("响应类型: %d\n", msgType)
+
+		// 标志
+		flags := responseBuffer[offset]
+		offset++
+		fmt.Printf("响应标志: %d\n", flags)
+
+		// 序列号
+		sequenceID := binary.BigEndian.Uint32(responseBuffer[offset : offset+4])
+		offset += 4
+		fmt.Printf("响应序列号: %d\n", sequenceID)
+
+		// 时间戳
+		timestamp := int64(binary.BigEndian.Uint64(responseBuffer[offset : offset+8]))
+		offset += 8
+		fmt.Printf("响应时间戳: %d\n", timestamp)
+
+		// 消息体长度
+		bodyLength := binary.BigEndian.Uint32(responseBuffer[offset : offset+4])
+		offset += 4
+		fmt.Printf("响应体长度: %d\n", bodyLength)
+
+		// 校验和
+		checksum := binary.BigEndian.Uint32(responseBuffer[offset : offset+4])
+		offset += 4
+		fmt.Printf("响应校验和: %d (0x%x)\n", checksum, checksum)
+
+		fmt.Printf("✅ 心跳响应解析成功！\n")
+	} else {
+		fmt.Printf("❌ 响应数据长度不足: %d 字节 (最小需要28字节)\n", n)
 	}
 }

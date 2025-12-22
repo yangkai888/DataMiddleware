@@ -41,14 +41,72 @@ func Init(config types.LoggerConfig) (Logger, error) {
 	// 创建日志编码器
 	encoder := getEncoder(config.Format)
 
-	// 创建日志输出器
-	writeSyncer := getWriteSyncer(config)
-
 	// 设置日志级别
 	level := getLogLevel(config.Level)
 
-	// 创建核心
-	core := zapcore.NewCore(encoder, writeSyncer, level)
+	// 创建多个核心
+	var cores []zapcore.Core
+
+	// 根据输出目标创建核心
+	switch strings.ToLower(config.Output) {
+	case "stdout":
+		core := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level)
+		cores = append(cores, core)
+	case "stderr":
+		core := zapcore.NewCore(encoder, zapcore.AddSync(os.Stderr), level)
+		cores = append(cores, core)
+	case "console":
+		// console模式：同时输出到控制台和文件
+		consoleCore := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level)
+		cores = append(cores, consoleCore)
+
+		if config.File.Path != "" {
+			// 确保路径是绝对路径
+			absPath, err := filepath.Abs(config.File.Path)
+			if err != nil {
+				absPath = config.File.Path
+			}
+			logDir := filepath.Dir(absPath)
+			if err := os.MkdirAll(logDir, 0755); err == nil {
+				lumberJackLogger := &lumberjack.Logger{
+					Filename:   absPath,
+					MaxSize:    config.File.MaxSize,
+					MaxBackups: config.File.MaxBackups,
+					MaxAge:     config.File.MaxAge,
+					Compress:   config.File.Compress,
+				}
+				fileCore := zapcore.NewCore(encoder, zapcore.AddSync(lumberJackLogger), level)
+				cores = append(cores, fileCore)
+			}
+		}
+	case "file":
+		// file模式：只输出到文件
+		if config.File.Path != "" {
+			absPath, err := filepath.Abs(config.File.Path)
+			if err != nil {
+				absPath = config.File.Path
+			}
+			logDir := filepath.Dir(absPath)
+			if err := os.MkdirAll(logDir, 0755); err == nil {
+				lumberJackLogger := &lumberjack.Logger{
+					Filename:   absPath,
+					MaxSize:    config.File.MaxSize,
+					MaxBackups: config.File.MaxBackups,
+					MaxAge:     config.File.MaxAge,
+					Compress:   config.File.Compress,
+				}
+				fileCore := zapcore.NewCore(encoder, zapcore.AddSync(lumberJackLogger), level)
+				cores = append(cores, fileCore)
+			}
+		}
+	default:
+		// 默认使用标准输出
+		core := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level)
+		cores = append(cores, core)
+	}
+
+	// 使用NewTee组合多个核心
+	core := zapcore.NewTee(cores...)
 
 	// 创建日志器
 	logger := zap.New(core,
@@ -87,60 +145,6 @@ func getEncoder(format string) zapcore.Encoder {
 	default:
 		return zapcore.NewJSONEncoder(encoderConfig)
 	}
-}
-
-// getWriteSyncer 获取输出器
-func getWriteSyncer(config types.LoggerConfig) zapcore.WriteSyncer {
-	var writeSyncers []zapcore.WriteSyncer
-
-	// 根据输出目标添加输出器
-	switch strings.ToLower(config.Output) {
-	case "stdout":
-		writeSyncers = append(writeSyncers, zapcore.AddSync(os.Stdout))
-	case "stderr":
-		writeSyncers = append(writeSyncers, zapcore.AddSync(os.Stderr))
-	case "file":
-		// 创建日志目录
-		logDir := filepath.Dir(config.File.Path)
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			// 如果创建目录失败，使用标准输出
-			writeSyncers = append(writeSyncers, zapcore.AddSync(os.Stdout))
-		} else {
-			// 使用lumberjack进行日志轮转
-			lumberJackLogger := &lumberjack.Logger{
-				Filename:   config.File.Path,
-				MaxSize:    config.File.MaxSize,    // 单个文件最大尺寸，MB
-				MaxBackups: config.File.MaxBackups, // 保留的最大旧文件数量
-				MaxAge:     config.File.MaxAge,     // 保留的最大天数
-				Compress:   config.File.Compress,   // 是否压缩
-			}
-			writeSyncers = append(writeSyncers, zapcore.AddSync(lumberJackLogger))
-		}
-	default:
-		// 默认使用标准输出
-		writeSyncers = append(writeSyncers, zapcore.AddSync(os.Stdout))
-	}
-
-	// 如果配置为同时输出到文件和控制台
-	if config.Output == "both" {
-		writeSyncers = append(writeSyncers, zapcore.AddSync(os.Stdout))
-		if config.File.Path != "" {
-			logDir := filepath.Dir(config.File.Path)
-			if err := os.MkdirAll(logDir, 0755); err == nil {
-				lumberJackLogger := &lumberjack.Logger{
-					Filename:   config.File.Path,
-					MaxSize:    config.File.MaxSize,
-					MaxBackups: config.File.MaxBackups,
-					MaxAge:     config.File.MaxAge,
-					Compress:   config.File.Compress,
-				}
-				writeSyncers = append(writeSyncers, zapcore.AddSync(lumberJackLogger))
-			}
-		}
-	}
-
-	// 返回组合输出器
-	return zapcore.NewMultiWriteSyncer(writeSyncers...)
 }
 
 // getLogLevel 获取日志级别

@@ -21,7 +21,7 @@ server:
     write_timeout: 30s
 
 # 日志配置
-logging:
+logger:
   level: debug    # 开发环境: debug, 生产环境: info
   format: console # 开发环境: console, 生产环境: json
   output: console # 开发环境: console, 生产环境: file
@@ -34,17 +34,18 @@ logging:
 
 # 数据库配置
 database:
-  driver: mysql
-  host: "localhost"
-  port: 3306
-  username: "root"
-  password: "MySQL@123456"
-  database: "datamiddleware_dev"  # 开发环境数据库
-  charset: "utf8mb4"
-  max_open_conns: 50   # 开发环境: 50, 生产环境: 200
-  max_idle_conns: 10   # 开发环境: 10, 生产环境: 50
-  conn_max_lifetime: 1h
-  conn_max_idle_time: 30m
+  primary:
+    driver: mysql
+    host: "localhost"
+    port: 3306
+    username: "root"
+    password: "MySQL@123456"
+    database: "datamiddleware_dev"  # 开发环境数据库
+    charset: "utf8mb4"
+    max_open_conns: 200   # 开发环境: 50, 生产环境: 200
+    max_idle_conns: 50   # 开发环境: 10, 生产环境: 50
+    conn_max_lifetime: 1h
+    conn_max_idle_time: 30m
 
 # Redis缓存配置 - 开发环境优化
 redis:
@@ -61,26 +62,33 @@ redis:
   save: ""           # 不进行RDB快照
   appendonly: false  # 不启用AOF
 
-# JWT认证配置
-auth:
-  jwt:
-    secret: "dev-jwt-secret-key-change-in-production"  # 生产环境必须更换
-    expire: 24h
-
 # 缓存配置
 cache:
   l1:  # L1本地缓存配置
     enabled: true
-    size: 1000    # 缓存项数量
-    ttl: 10m      # 生存时间
+    shards: 1024    # 必须是2的幂
+    life_window: 10m
+    clean_window: 5m
+    max_entries_in_window: 600000
+    max_entry_size: 500
+    verbose: true
+    hard_max_cache_size: 8192
   l2:  # L2 Redis缓存配置
     enabled: true
-    ttl: 1h       # 生存时间
+    host: "localhost"
+    port: 6379
+    password: ""
+    db: 0
+    pool_size: 10
+    min_idle_conn: 2
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
 
-# 异步处理配置
-async:
-  queue_size: 1000    # 队列大小
-  worker_count: 4     # 工作协程数
+# JWT认证配置
+jwt:
+  secret: "dev-jwt-secret-key-change-in-production"  # 生产环境必须更换
+  expire: 86400  # token过期时间(秒)
 
 # 游戏路由配置
 games:
@@ -98,11 +106,14 @@ games:
 # 监控配置
 monitor:
   enabled: true
-  interval: 30s
-  health_check:
-    enabled: true
-    path: "/health"
-    interval: 30s
+  port: 9091
+  path: "/metrics"
+
+# 健康检查配置
+health:
+  enabled: true
+  path: "/health"
+  check_interval: 30s
 
 # =============================================================================
 # 环境变量覆盖配置

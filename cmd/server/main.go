@@ -6,16 +6,16 @@ import (
 	"os/signal"
 	"syscall"
 
+	apiHandlers "datamiddleware/internal/api/handlers"
+	businessCommon "datamiddleware/internal/business/common"
+	errorCommon "datamiddleware/internal/common/errors"
+	"datamiddleware/internal/config"
+	dataPkg "datamiddleware/internal/data/dao"
 	asyncInfra "datamiddleware/internal/infrastructure/async"
 	authInfra "datamiddleware/internal/infrastructure/auth"
 	cacheInfra "datamiddleware/internal/infrastructure/cache"
-	"datamiddleware/internal/config"
-	dataPkg "datamiddleware/internal/data/dao"
-	errorCommon "datamiddleware/internal/common/errors"
 	loggingInfra "datamiddleware/internal/infrastructure/logging"
 	"datamiddleware/internal/router"
-	apiHandlers "datamiddleware/internal/api/handlers"
-	businessCommon "datamiddleware/internal/business/common"
 )
 
 func main() {
@@ -33,10 +33,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 确保程序退出时同步日志缓冲区
+	defer func() {
+		log.Sync()
+	}()
+
 	log.Info("数据中间件服务启动中...",
 		"version", "1.0.0",
 		"env", cfg.Server.Env,
 	)
+
+	// 测试日志写入
+	log.Info("测试日志写入文件 - 这条日志应该出现在文件中")
+	log.Debug("调试信息测试 - SQL查询等详细信息")
+
+	// 强制同步日志缓冲区，确保日志写入文件
+	log.Sync()
 
 	// 初始化错误处理
 	errorHandler := errorCommon.Init(log)

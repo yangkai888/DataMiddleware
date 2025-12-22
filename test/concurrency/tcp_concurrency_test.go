@@ -152,8 +152,13 @@ func createTCPMessage(config TCPConcurrencyConfig, sequenceID uint32) ([]byte, e
 	// 消息体
 	copy(buffer[offset:], config.MessageBody)
 
-	// 计算校验和 (对整个消息进行CRC32)
-	checksum := crc32.ChecksumIEEE(buffer[:totalLen])
+	// 计算校验和 (按照服务器BinaryCodec的方式)
+	// 校验和字段位置: 20-24字节
+	// checksumData = buffer[:20] + buffer[24:]
+	checksumData := make([]byte, 0, totalLen-4)
+	checksumData = append(checksumData, buffer[:checksumOffset]...)   // 校验和字段之前的数据
+	checksumData = append(checksumData, buffer[checksumOffset+4:]...) // 校验和字段之后的数据
+	checksum := crc32.ChecksumIEEE(checksumData)
 	binary.BigEndian.PutUint32(buffer[checksumOffset:checksumOffset+4], checksum)
 
 	return buffer, nil
