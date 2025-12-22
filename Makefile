@@ -9,17 +9,20 @@ GOMOD=$(GOCMD) mod
 # Main package
 MAIN_PACKAGE=./cmd/server
 
-# Binary name
+# Binary name and directory
+BINARY_DIR=bin
 BINARY_NAME=datamiddleware
 BINARY_UNIX=$(BINARY_NAME)_unix
 
 # Build the project
 build:
-	$(GOBUILD) -o $(BINARY_NAME) -v $(MAIN_PACKAGE)
+	mkdir -p $(BINARY_DIR)
+	$(GOBUILD) -o $(BINARY_DIR)/$(BINARY_NAME) -v $(MAIN_PACKAGE)
 
 # Build for Linux
 build-linux:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BINARY_UNIX) -v $(MAIN_PACKAGE)
+	mkdir -p $(BINARY_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BINARY_DIR)/$(BINARY_UNIX) -v $(MAIN_PACKAGE)
 
 # Test
 test:
@@ -78,14 +81,14 @@ all-tests: test perf-tests demos
 # Clean
 clean:
 	$(GOCLEAN)
-	rm -f $(BINARY_NAME)
-	rm -f $(BINARY_UNIX)
+	rm -rf $(BINARY_DIR)
 	rm -f coverage.out coverage.html
 
 # Run
 run:
-	$(GOBUILD) -o $(BINARY_NAME) -v $(MAIN_PACKAGE)
-	./$(BINARY_NAME)
+	mkdir -p $(BINARY_DIR)
+	$(GOBUILD) -o $(BINARY_DIR)/$(BINARY_NAME) -v $(MAIN_PACKAGE)
+	./$(BINARY_DIR)/$(BINARY_NAME)
 
 # Dependencies
 deps:

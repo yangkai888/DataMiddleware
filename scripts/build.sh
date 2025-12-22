@@ -30,7 +30,7 @@ log_error() {
 }
 
 # 默认配置
-BUILD_DIR="build"
+BUILD_DIR="bin"
 OUTPUT_NAME="datamiddleware"
 GOOS=${GOOS:-"linux"}
 GOARCH=${GOARCH:-"amd64"}
