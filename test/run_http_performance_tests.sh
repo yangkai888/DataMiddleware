@@ -11,7 +11,7 @@ BINARY_PATH="$PROJECT_ROOT/bin/datamiddleware"
 CONFIG_PATH="$PROJECT_ROOT/configs/config.yaml"
 
 # 测试配置
-HTTP_QPS_TEST_DURATION=60      # QPS测试时长(秒)
+HTTP_QPS_TEST_DURATION=30      # QPS测试时长(秒) - 缩短测试时间
 HTTP_CONCURRENCY_MAX=5000      # 并发测试最大连接数
 
 # 颜色输出
@@ -153,8 +153,8 @@ test_http_qps_limit() {
 设计目标: 8-12万QPS
 " > /tmp/http_qps_limit_results.txt
 
-    # 测试不同并发级别
-    local concurrency_levels=(10 50 100 200 500 1000)
+    # 测试不同并发级别 - 从低到高逐步测试
+    local concurrency_levels=(10 50 100 200 500 1000 2000 3000 4000 5000)
     local max_qps=0
     local best_concurrency=0
 
@@ -181,9 +181,13 @@ test_http_qps_limit() {
         fi
 
         # 如果成功率过低，停止测试
-        if [[ -n "$success_rate" ]] && [[ "${success_rate%\%}" -lt 80 ]]; then
-            log_warn "成功率过低 ($success_rate)，可能已达到系统极限"
-            break
+        if [[ -n "$success_rate" ]]; then
+            # 提取百分比数值（去掉%号）
+            success_rate_num=$(echo "${success_rate%\%}" | awk '{print int($1)}')
+            if [ "$success_rate_num" -lt 80 ]; then
+                log_warn "成功率过低 ($success_rate)，可能已达到系统极限"
+                break
+            fi
         fi
     done
 
@@ -273,7 +277,7 @@ generate_final_report() {
 - **测试工具**: 自定义Go并发基准测试
 - **测试接口**: GET /health
 - **测试时长**: ${HTTP_QPS_TEST_DURATION}秒/组
-- **并发范围**: 10-1000用户
+- **并发范围**: 10-5000用户 (逐步测试，失败率>20%时自动停止)
 
 ### 详细QPS数据
 $(cat /tmp/http_qps_limit_results.txt 2>/dev/null || echo "无QPS测试数据")
@@ -325,8 +329,8 @@ $(cat /tmp/http_concurrency_limit_results.txt 2>/dev/null || echo "无并发测�
 
 | 性能指标 | 设计目标 | 实际达成 | 达成度 | 评估 |
 |----------|----------|----------|--------|------|
-| HTTP QPS | 80,000-120,000 | ${HTTP_MAX_QPS:-0} | $(echo "scale=1; ${HTTP_MAX_QPS:-0} * 100 / 80000" | bc -l 2>/dev/null || echo "0")% | $([[ ${HTTP_MAX_QPS:-0} -ge 50000 ]] && echo "良好" || [[ ${HTTP_MAX_QPS:-0} -ge 10000 ]] && echo "可接受" || echo "需优化") |
-| 并发连接 | 10,000+ | ${HTTP_MAX_CONCURRENCY:-0} | - | $([[ ${HTTP_MAX_CONCURRENCY:-0} -ge 1000 ]] && echo "良好" || echo "需优化") |
+| HTTP QPS | 80,000-120,000 | ${HTTP_MAX_QPS:-0} | $(echo "scale=1; ${HTTP_MAX_QPS:-0} * 100 / 80000" | bc -l 2>/dev/null || echo "0")% | $([ "${HTTP_MAX_QPS:-0}" -ge 50000 ] && echo "良好" || [ "${HTTP_MAX_QPS:-0}" -ge 10000 ] && echo "可接受" || echo "需优化") |
+| 并发连接 | 10,000+ | ${HTTP_MAX_CONCURRENCY:-0} | - | $([ "${HTTP_MAX_CONCURRENCY:-0}" -ge 1000 ] && echo "良好" || echo "需优化") |
 | 响应时间 | <50ms | - | - | 测试中确认 |
 | 系统稳定 | 高负载稳定 | ✅ | 100% | ✅ 优秀 |
 
