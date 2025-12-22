@@ -75,7 +75,7 @@ func (s *TCPConnectionStats) Add(duration time.Duration) {
 	}
 }
 
-// 创建TCP消息 (与QPS测试相同)
+// 创建TCP消息 (使用二进制协议，与服务器BinaryCodec兼容)
 func createTCPMessage(config TCPConcurrencyConfig, sequenceID uint32) ([]byte, error) {
 	header := types.MessageHeader{
 		Version:    types.ProtocolVersion,
@@ -88,35 +88,73 @@ func createTCPMessage(config TCPConcurrencyConfig, sequenceID uint32) ([]byte, e
 		BodyLength: uint32(len(config.MessageBody)),
 	}
 
-	// 计算校验和
-	headerData, err := json.Marshal(header)
-	if err != nil {
-		return nil, fmt.Errorf("序列化消息头失败: %w", err)
-	}
+	// 准备字符串数据
+	gameIDBytes := []byte(header.GameID)
+	userIDBytes := []byte(header.UserID)
 
-	checksum := crc32.ChecksumIEEE(headerData)
-	checksum = crc32.Update(checksum, crc32.IEEETable, config.MessageBody)
+	// 计算消息总长度
+	gameIDLen := uint16(len(gameIDBytes))
+	userIDLen := uint16(len(userIDBytes))
+	bodyLen := uint32(len(config.MessageBody))
 
-	header.Checksum = checksum
+	// 固定头部长度: 版本(1) + 类型(2) + 标志(1) + 序列号(4) + 时间戳(8) + 体长度(4) + 校验和(4) + 游戏ID长度(2) + 用户ID长度(2)
+	fixedHeaderLen := 1 + 2 + 1 + 4 + 8 + 4 + 4 + 2 + 2
+	totalLen := fixedHeaderLen + int(gameIDLen) + int(userIDLen) + int(bodyLen)
 
-	// 重新序列化消息头
-	headerData, err = json.Marshal(header)
-	if err != nil {
-		return nil, fmt.Errorf("重新序列化消息头失败: %w", err)
-	}
+	buffer := make([]byte, totalLen)
+	offset := 0
 
-	// 构造完整消息
-	headerLen := uint32(len(headerData))
-	buffer := make([]byte, 4+headerLen+uint32(len(config.MessageBody)))
+	// 版本
+	buffer[offset] = header.Version
+	offset++
 
-	// 写入消息头长度
-	binary.BigEndian.PutUint32(buffer[0:4], headerLen)
+	// 类型
+	binary.BigEndian.PutUint16(buffer[offset:offset+2], uint16(header.Type))
+	offset += 2
 
-	// 写入消息头数据
-	copy(buffer[4:4+headerLen], headerData)
+	// 标志
+	buffer[offset] = byte(header.Flags)
+	offset++
 
-	// 写入消息体数据
-	copy(buffer[4+headerLen:], config.MessageBody)
+	// 序列号
+	binary.BigEndian.PutUint32(buffer[offset:offset+4], header.SequenceID)
+	offset += 4
+
+	// 时间戳
+	binary.BigEndian.PutUint64(buffer[offset:offset+8], uint64(header.Timestamp))
+	offset += 8
+
+	// 消息体长度
+	binary.BigEndian.PutUint32(buffer[offset:offset+4], bodyLen)
+	offset += 4
+
+	// 计算校验和 (暂时设为0，稍后计算)
+	checksumOffset := offset
+	binary.BigEndian.PutUint32(buffer[offset:offset+4], 0)
+	offset += 4
+
+	// 游戏ID长度
+	binary.BigEndian.PutUint16(buffer[offset:offset+2], gameIDLen)
+	offset += 2
+
+	// 用户ID长度
+	binary.BigEndian.PutUint16(buffer[offset:offset+2], userIDLen)
+	offset += 2
+
+	// 游戏ID
+	copy(buffer[offset:offset+int(gameIDLen)], gameIDBytes)
+	offset += int(gameIDLen)
+
+	// 用户ID
+	copy(buffer[offset:offset+int(userIDLen)], userIDBytes)
+	offset += int(userIDLen)
+
+	// 消息体
+	copy(buffer[offset:], config.MessageBody)
+
+	// 计算校验和 (对整个消息进行CRC32)
+	checksum := crc32.ChecksumIEEE(buffer[:totalLen])
+	binary.BigEndian.PutUint32(buffer[checksumOffset:checksumOffset+4], checksum)
 
 	return buffer, nil
 }
