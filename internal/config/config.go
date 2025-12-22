@@ -112,9 +112,7 @@ func setDefaults() {
 	viper.SetDefault("redis.read_timeout", "3s")
 	viper.SetDefault("redis.write_timeout", "3s")
 
-	// 本地缓存默认配置
-	viper.SetDefault("cache.local.size", 1000)
-	viper.SetDefault("cache.local.ttl", 3600)
+	// 本地缓存配置已迁移到cache.l1，使用bigcache配置参数
 
 	// JWT默认配置
 	viper.SetDefault("jwt.secret", "change-this-in-production")
