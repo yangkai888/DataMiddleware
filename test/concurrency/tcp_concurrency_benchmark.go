@@ -4,7 +4,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"log"
@@ -290,7 +289,6 @@ func RunTCPConcurrencyTest(config TCPConcurrencyConfig) (*TCPConcurrencyResult, 
 	result.EndTime = time.Since(result.StartTime)
 
 	// 计算最终统计
-	total := atomic.LoadInt64(&result.TotalAttempts)
 	success := atomic.LoadInt64(&result.SuccessfulRequests)
 	result.QPS = float64(success) / result.EndTime.Seconds()
 
