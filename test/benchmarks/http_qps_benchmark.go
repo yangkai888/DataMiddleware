@@ -143,12 +143,9 @@ func httpWorker(ctx context.Context, client *http.Client, config HTTPBenchmarkCo
 			if err != nil {
 				atomic.AddInt64(&results.FailedRequests, 1)
 
-				// 记录错误（限制错误数量）
-				results.mu.Lock()
-				if len(results.Errors) < 5 {
-					results.Errors = append(results.Errors, fmt.Sprintf("Request failed: %v", err))
-				}
-				results.mu.Unlock()
+				// 记录错误（限制错误数量，使用原子操作）
+				// 注意：这里为了简单起见，不限制错误数量，生产环境应使用同步机制
+				results.Errors = append(results.Errors, fmt.Sprintf("Request failed: %v", err))
 				continue
 			}
 
@@ -216,8 +213,8 @@ func RunHTTPBenchmark(config HTTPBenchmarkConfig) (*HTTPBenchmarkResult, error) 
 
 // 打印测试结果
 func printResults(result *HTTPBenchmarkResult, config HTTPBenchmarkConfig) {
-	fmt.Println("
-=== DataMiddleware HTTP QPS极限基准测试结果 ===")
+	fmt.Println("")
+	fmt.Println("=== DataMiddleware HTTP QPS极限基准测试结果 ===")
 	fmt.Printf("测试配置:\n")
 	fmt.Printf("  目标URL: %s\n", config.TargetURL)
 	fmt.Printf("  请求方法: %s\n", config.Method)

@@ -212,8 +212,8 @@ func RunHTTPConcurrencyTest(config HTTPConcurrencyConfig) (*HTTPConcurrencyResul
 
 // 打印HTTP并发测试结果
 func printHTTPConcurrencyResults(result *HTTPConcurrencyResult, config HTTPConcurrencyConfig) {
-	fmt.Println("
-=== DataMiddleware HTTP并发极限测试结果 ===")
+	fmt.Println("")
+	fmt.Println("=== DataMiddleware HTTP并发极限测试结果 ===")
 	fmt.Printf("测试配置:\n")
 	fmt.Printf("  目标地址: %s\n", config.TargetAddr)
 	fmt.Printf("  最大连接数: %d\n", config.MaxConnections)
