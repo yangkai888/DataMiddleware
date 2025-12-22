@@ -1,4 +1,5 @@
 # 数据中间件配置文件
+# 支持多环境配置：dev, test, prod
 
 # 服务器配置
 server:
@@ -11,93 +12,75 @@ server:
     read_timeout: 30s
     write_timeout: 30s
     max_header_bytes: 1048576
-# TCP服务器配置
-tcp:
-  host: "0.0.0.0"
-  port: 9090
-  max_connections: 10000
-  read_timeout: 30s
-  write_timeout: 30s
-  debug: true  # 开发模式下显示详细调试信息
+  # TCP服务器配置
+  tcp:
+    host: "0.0.0.0"
+    port: 9090
+    max_connections: 10000  # 生产环境: 50000, 开发环境: 1000
+    read_timeout: 30s
+    write_timeout: 30s
 
 # 日志配置
-logger:
-  level: "info"  # debug, info, warn, error
-  format: "json" # json, console
-  output: "file" # stdout, file
+logging:
+  level: debug    # 开发环境: debug, 生产环境: info
+  format: console # 开发环境: console, 生产环境: json
+  output: console # 开发环境: console, 生产环境: file
   file:
-    path: "logs/datamiddleware.log"
-    max_size: 100  # MB
-    max_age: 30    # days
+    path: "./logs/datamiddleware.log"
+    max_size: 100    # MB
     max_backups: 10
-    compress: true
+    max_age: 30      # days
+    compress: false  # 开发环境: false, 生产环境: true
 
 # 数据库配置
 database:
-  # 主数据库
-  primary:
-    driver: "mysql" # mysql, oracle
-    host: "localhost"
-    port: 3306
-    username: "root"
-    password: "MySQL@123456"
-    database: "datamiddleware"
-    charset: "utf8mb4"
-    max_open_conns: 100
-    max_idle_conns: 10
-    conn_max_lifetime: 300s
-  # 从数据库 (可选)
-  replica:
-    - driver: "mysql"
-      host: "localhost"
-      port: 3307
-      username: "root"
-      password: "password"
-      database: "datamiddleware"
-      charset: "utf8mb4"
-      max_open_conns: 50
-      max_idle_conns: 5
-      conn_max_lifetime: 300s
+  driver: mysql
+  host: "localhost"
+  port: 3306
+  username: "root"
+  password: "MySQL@123456"
+  database: "datamiddleware_dev"  # 开发环境数据库
+  charset: "utf8mb4"
+  max_open_conns: 50   # 开发环境: 50, 生产环境: 200
+  max_idle_conns: 10   # 开发环境: 10, 生产环境: 50
+  conn_max_lifetime: 1h
+  conn_max_idle_time: 30m
 
-# Redis缓存配置
+# Redis缓存配置 - 开发环境优化
 redis:
   host: "localhost"
   port: 6379
-  password: ""
+  password: ""        # 开发环境不设置密码
   db: 0
-  pool_size: 10
-  min_idle_conns: 2
-  conn_max_lifetime: 300s
+  pool_size: 10       # 开发环境: 10, 生产环境: 50
+  min_idle_conns: 2   # 开发环境: 2, 生产环境: 10
+  conn_max_lifetime: 30m
   read_timeout: 3s
   write_timeout: 3s
+  # 开发环境禁用持久化，避免生成数据文件
+  save: ""           # 不进行RDB快照
+  appendonly: false  # 不启用AOF
+
+# JWT认证配置
+auth:
+  jwt:
+    secret: "dev-jwt-secret-key-change-in-production"  # 生产环境必须更换
+    expire: 24h
 
 # 缓存配置
 cache:
   l1:  # L1本地缓存配置
     enabled: true
-    shards: 1024
-    life_window: 10m
-    clean_window: 5m
-    max_entries_in_window: 600000
-    max_entry_size: 500
-    verbose: true
-    hard_max_cache_size: 8192
+    size: 1000    # 缓存项数量
+    ttl: 10m      # 生存时间
   l2:  # L2 Redis缓存配置
     enabled: true
-    host: "localhost"
-    port: 6379
-    password: ""
-    db: 0
-    pool_size: 10
-    min_idle_conn: 2
-    dial_timeout: 5s
-    read_timeout: 3s
-    write_timeout: 3s
+    ttl: 1h       # 生存时间
 
-# JWT配置
-jwt:
-  secret: "your-secret-key-change-in-production"
-  expire: 86400  # token过期时间(秒)
+# 异步处理配置
+async:
+  queue_size: 1000    # 队列大小
+  worker_count: 4     # 工作协程数
 
 # 游戏路由配置
 games:
@@ -115,11 +98,41 @@ games:
 # 监控配置
 monitor:
   enabled: true
-  port: 9091
-  path: "/metrics"
+  interval: 30s
+  health_check:
+    enabled: true
+    path: "/health"
+    interval: 30s
 
-# 健康检查配置
-health:
-  enabled: true
-  path: "/health"
-  check_interval: 30s
+# =============================================================================
+# 环境变量覆盖配置
+# =============================================================================
+# 可以通过环境变量覆盖以上配置：
+#
+# 开发环境:
+# export DATAMIDDLEWARE_SERVER_ENV=dev
+# export DATAMIDDLEWARE_DATABASE_DATABASE=datamiddleware_dev
+# export DATAMIDDLEWARE_LOGGING_LEVEL=debug
+# export DATAMIDDLEWARE_LOGGING_FORMAT=console
+# export DATAMIDDLEWARE_REDIS_PASSWORD=""
+# export DATAMIDDLEWARE_TCP_MAX_CONNECTIONS=1000
+#
+# 生产环境:
+# export DATAMIDDLEWARE_SERVER_ENV=prod
+# export DATAMIDDLEWARE_DATABASE_DATABASE=datamiddleware_prod
+# export DATAMIDDLEWARE_LOGGING_LEVEL=info
+# export DATAMIDDLEWARE_LOGGING_FORMAT=json
+# export DATAMIDDLEWARE_LOGGING_OUTPUT=file
+# export DATAMIDDLEWARE_LOGGING_FILE_COMPRESS=true
+# export DATAMIDDLEWARE_REDIS_PASSWORD="your-redis-password"
+# export DATAMIDDLEWARE_AUTH_JWT_SECRET="your-production-jwt-secret"
+# export DATAMIDDLEWARE_TCP_MAX_CONNECTIONS=50000
+# export DATAMIDDLEWARE_DATABASE_MAX_OPEN_CONNS=200
+# export DATAMIDDLEWARE_DATABASE_MAX_IDLE_CONNS=50
+# export DATAMIDDLEWARE_REDIS_POOL_SIZE=50
+# export DATAMIDDLEWARE_REDIS_MIN_IDLE_CONNS=10
+#
+# 使用方法:
+# ./datamiddleware  # 使用配置文件 + 环境变量覆盖
+#
+# =============================================================================
