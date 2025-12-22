@@ -9,10 +9,13 @@
 ```
 test/
 ├── benchmarks/           # 基准性能测试
-│   └── http_qps_benchmark.go     # HTTP QPS极限基准测试
+│   ├── http_qps_benchmark.go     # HTTP QPS极限基准测试
+│   └── tcp_qps_benchmark.go      # TCP QPS极限基准测试
 ├── concurrency/          # 并发测试
-│   └── http_concurrency_test.go  # HTTP并发连接极限测试
+│   ├── http_concurrency_test.go  # HTTP并发连接极限测试
+│   └── tcp_concurrency_test.go   # TCP并发连接极限测试
 ├── run_http_performance_tests.sh # HTTP性能测试统一运行脚本
+├── run_tcp_performance_tests.sh  # TCP性能测试统一运行脚本
 ├── README.md              # 本指南
 └── ...
 ```
@@ -34,6 +37,12 @@ mysql -u root -p -e "SELECT 1;"   # MySQL
 ```bash
 # 运行完整的HTTP性能测试套件
 ./test/run_http_performance_tests.sh
+```
+
+### 3. 运行完整TCP性能测试
+```bash
+# 运行完整的TCP性能测试套件
+./test/run_tcp_performance_tests.sh
 ```
 
 ## 📊 性能测试详解
@@ -130,6 +139,93 @@ go run test/concurrency/http_concurrency_test.go 1000 http://localhost:8080/heal
 | 1,000-5,000 | >90% | 良好 | 具备实用并发能力 |
 | 500-1,000 | >80% | 可接受 | 基本满足需求 |
 | <500 | <80% | 待优化 | 并发处理能力有限 |
+
+## 🔌 TCP性能测试详解
+
+### TCP QPS极限测试
+
+#### 功能特性
+- 精确的TCP QPS测量和统计
+- 二进制协议性能测试
+- 长连接并发优化
+- 自动寻找TCP最佳性能点
+- 心跳机制压力测试
+
+#### 使用方法
+```bash
+# 基本用法 - 默认心跳消息
+go run test/benchmarks/tcp_qps_benchmark.go 100
+
+# 指定地址和消息类型
+go run test/benchmarks/tcp_qps_benchmark.go 200 localhost:9090 60 4097
+
+# 参数说明
+# 第一个参数: 并发数
+# 第二个参数: TCP地址 (可选)
+# 第三个参数: 测试时长秒 (可选)
+# 第四个参数: 消息类型ID (可选)
+```
+
+#### TCP消息类型
+| 消息类型ID | 消息类型 | 用途 |
+|------------|----------|------|
+| 4097 | MessageTypeHeartbeat | 心跳测试 |
+| 4098 | MessageTypeHandshake | 握手测试 |
+| 4353 | MessageTypePlayerLogin | 玩家登录 |
+| 4354 | MessageTypePlayerData | 玩家数据 |
+
+#### 输出示例
+```
+=== DataMiddleware TCP QPS极限基准测试结果 ===
+测试配置:
+  目标地址: localhost:9090
+  消息类型: 4097 (心跳)
+  并发数: 100
+  测试时长: 30s
+
+连接统计:
+  总请求数: 45000
+  成功请求数: 44850
+  QPS: 1495.00 req/sec
+  平均响应时间: 15.23ms
+```
+
+### TCP并发连接极限测试
+
+#### 功能特性
+- 逐步增加TCP并发连接数
+- 长连接压力测试
+- 二进制协议并发处理
+- 连接池化测试
+- 自动检测TCP处理极限
+
+#### 使用方法
+```bash
+# 基本用法 - 测试到5000并发连接
+go run test/concurrency/tcp_concurrency_test.go 5000
+
+# 指定目标TCP地址
+go run test/concurrency/tcp_concurrency_test.go 1000 localhost:9090
+
+# 参数说明
+# 第一个参数: 最大并发连接数
+# 第二个参数: TCP地址 (可选)
+```
+
+#### 输出示例
+```
+=== DataMiddleware TCP并发连接极限测试结果 ===
+测试配置:
+  目标地址: localhost:9090
+  最大连接数: 1000
+
+连接统计:
+  总尝试数: 1000
+  成功请求数: 950
+  成功率: 95.0%
+  实际QPS: 850.5 req/sec
+  总连接数: 950
+```
 
 ## 🔧 性能优化建议
 
