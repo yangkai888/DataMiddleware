@@ -115,7 +115,15 @@ optimize_system() {
 
 # 启动优化后的服务
 start_service() {
-    log_info "启动DataMiddleware TCP服务..."
+    log_info "检查DataMiddleware TCP服务..."
+
+    # 检查是否已有服务运行
+    if nc -z localhost 9090 2>/dev/null; then
+        log_success "发现已有TCP服务运行 (端口9090)，直接使用现有服务"
+        return 0
+    fi
+
+    log_info "启动新的DataMiddleware TCP服务..."
 
     # 设置TCP性能优化环境变量
     export GOMAXPROCS=$(nproc)
