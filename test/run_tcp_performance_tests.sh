@@ -196,9 +196,13 @@ test_tcp_qps_limit() {
         fi
 
         # 如果成功率过低，停止测试
-        if [[ -n "$success_rate" ]] && [[ "${success_rate%\%}" -lt 80 ]]; then
-            log_warn "TCP成功率过低 ($success_rate)，可能已达到系统极限"
-            break
+        if [[ -n "$success_rate" ]]; then
+            # 提取百分比数值（去掉%号），使用awk转换为整数
+            success_rate_num=$(echo "${success_rate%\%}" | awk '{print int($1)}')
+            if [ "$success_rate_num" -lt 80 ]; then
+                log_warn "TCP成功率过低 ($success_rate)，可能已达到系统极限"
+                break
+            fi
         fi
     done
 
