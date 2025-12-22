@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"datamiddleware/internal/logger"
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/infrastructure/logging"
+	"datamiddleware/internal/common/types"
 )
 
 // ConnectionManager 连接管理器

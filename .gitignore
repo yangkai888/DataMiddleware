@@ -51,3 +51,21 @@ config.dev.yml
 # Temporary files
 tmp/
 temp/
+
+# Redis data files (不要提交到代码库)
+*.rdb
+*.aof
+dump.rdb
+appendonly.aof
+
+# Redis configuration files (保留配置文件)
+!configs/redis.conf
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache and session files
+*.cache
+*.session

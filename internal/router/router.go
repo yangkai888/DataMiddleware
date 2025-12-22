@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"datamiddleware/internal/logger"
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/infrastructure/logging"
+	"datamiddleware/internal/common/types"
 )
 
 // GameHandler 游戏处理器接口

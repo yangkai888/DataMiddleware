@@ -9,8 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"datamiddleware/internal/logger"
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/infrastructure/logging"
+	"datamiddleware/internal/common/types"
 )
 
 // isConnectionClosedError 检查是否是连接关闭相关的错误

@@ -7,7 +7,7 @@ import (
 	"hash/crc32"
 	"time"
 
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/common/types"
 )
 
 // Codec 编解码器接口

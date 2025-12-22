@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"datamiddleware/internal/logger"
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/infrastructure/logging"
+	"datamiddleware/internal/common/types"
 )
 
 // BenchmarkConfig 基准测试配置

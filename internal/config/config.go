@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"datamiddleware/pkg/types"
+	"datamiddleware/internal/common/types"
 
 	"github.com/spf13/viper"
 )

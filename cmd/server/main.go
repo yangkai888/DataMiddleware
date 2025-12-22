@@ -6,16 +6,16 @@ import (
 	"os/signal"
 	"syscall"
 
-	"datamiddleware/internal/async"
-	"datamiddleware/internal/auth"
-	"datamiddleware/internal/cache"
+	asyncInfra "datamiddleware/internal/infrastructure/async"
+	authInfra "datamiddleware/internal/infrastructure/auth"
+	cacheInfra "datamiddleware/internal/infrastructure/cache"
 	"datamiddleware/internal/config"
-	"datamiddleware/internal/database"
-	"datamiddleware/internal/errors"
-	"datamiddleware/internal/logger"
+	dataPkg "datamiddleware/internal/data/dao"
+	errorCommon "datamiddleware/internal/common/errors"
+	loggingInfra "datamiddleware/internal/infrastructure/logging"
 	"datamiddleware/internal/router"
-	"datamiddleware/internal/server"
-	"datamiddleware/internal/services"
+	apiHandlers "datamiddleware/internal/api/handlers"
+	businessCommon "datamiddleware/internal/business/common"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 	}
 
 	// 初始化日志
-	log, err := logger.Init(cfg.Logger)
+	log, err := loggingInfra.Init(cfg.Logger)
 	if err != nil {
 		fmt.Printf("日志初始化失败: %v\n", err)
 		os.Exit(1)
@@ -39,18 +39,18 @@ func main() {
 	)
 
 	// 初始化错误处理
-	errorHandler := errors.Init(log)
+	errorHandler := errorCommon.Init(log)
 	_ = errorHandler // TODO: 在后续阶段使用错误处理器
 
 	// 初始化TCP服务器
-	tcpServer := server.NewTCPServer(cfg.Server, log)
+	tcpServer := apiHandlers.NewTCPServer(cfg.Server, log)
 	if err := tcpServer.Start(); err != nil {
 		log.Error("TCP服务器启动失败", "error", err)
 		os.Exit(1)
 	}
 
 	// 初始化数据库
-	db := database.NewDatabase(cfg.Database, log)
+	db := dataPkg.NewDatabase(cfg.Database, log)
 	if err := db.Connect(); err != nil {
 		log.Error("数据库连接失败", "error", err)
 		os.Exit(1)
@@ -63,27 +63,27 @@ func main() {
 	}
 
 	// 初始化DAO层
-	dao := database.NewDAO(db, log)
+	dao := dataPkg.NewDAO(db, log)
 
 	// 初始化JWT服务
-	jwtService := auth.NewJWTService(cfg.JWT, log)
+	jwtService := authInfra.NewJWTService(cfg.JWT, log)
 	_ = jwtService // TODO: 在后续功能中使用JWT服务
 
 	// 初始化业务服务
-	playerService := services.NewPlayerService(dao, log, jwtService)
-	itemService := services.NewItemService(dao, log)
-	orderService := services.NewOrderService(dao, log)
+	playerService := businessCommon.NewPlayerService(dao, log, jwtService)
+	itemService := businessCommon.NewItemService(dao, log)
+	orderService := businessCommon.NewOrderService(dao, log)
 
 	// 初始化缓存管理器
-	cacheManager, err := cache.NewManager(cfg.Cache, log)
+	cacheManager, err := cacheInfra.NewManager(cfg.Cache, log)
 	if err != nil {
 		log.Error("缓存管理器初始化失败", "error", err)
 		os.Exit(1)
 	}
 
 	// 初始化异步任务调度器
-	queue := async.NewPriorityQueue(1000, log)
-	taskScheduler := async.NewTaskScheduler(queue, 4, log)
+	queue := asyncInfra.NewPriorityQueue(1000, log)
+	taskScheduler := asyncInfra.NewTaskScheduler(queue, 4, log)
 	if err := taskScheduler.Start(); err != nil {
 		log.Error("任务调度器启动失败", "error", err)
 		os.Exit(1)
@@ -93,8 +93,8 @@ func main() {
 	messageRouter := router.NewMessageRouter(log)
 
 	// 注册游戏处理器
-	game1Handler := services.NewGameHandler("game1", playerService, itemService, orderService, log)
-	game2Handler := services.NewGameHandler("game2", playerService, itemService, orderService, log)
+	game1Handler := businessCommon.NewGameHandler("game1", playerService, itemService, orderService, log)
+	game2Handler := businessCommon.NewGameHandler("game2", playerService, itemService, orderService, log)
 
 	if err := messageRouter.RegisterGameHandler("game1", game1Handler); err != nil {
 		log.Error("注册游戏处理器失败", "game_id", "game1", "error", err)
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	// 初始化HTTP服务器
-	httpServer := server.NewHTTPServer(cfg.Server, log, errorHandler, dao, jwtService, playerService, itemService, orderService, cacheManager, taskScheduler)
+	httpServer := apiHandlers.NewHTTPServer(cfg.Server, log, errorHandler, dao, jwtService, playerService, itemService, orderService, cacheManager, taskScheduler)
 	if err := httpServer.Start(); err != nil {
 		log.Error("HTTP服务器启动失败", "error", err)
 		os.Exit(1)
@@ -116,7 +116,7 @@ func main() {
 	// 暂时简化实现，后续完善
 
 	// 缓存预热
-	warmup := cache.NewDefaultWarmup(log)
+	warmup := cacheInfra.NewDefaultWarmup(log)
 	if err := cacheManager.WarmupCache(warmup); err != nil {
 		log.Warn("缓存预热失败", "error", err)
 		// 预热失败不影响服务启动
