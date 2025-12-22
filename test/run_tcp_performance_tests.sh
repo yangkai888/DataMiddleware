@@ -238,6 +238,13 @@ test_tcp_concurrency_limit() {
 
     log_test "运行TCP并发连接极限测试..."
 
+    # 确保服务器正在运行
+    if ! nc -z localhost 9090 2>/dev/null; then
+        log_warn "TCP服务器未运行，重新启动..."
+        start_service
+        sleep 2  # 等待服务完全启动
+    fi
+
     # 使用Go TCP并发测试
     go run test/concurrency/tcp_concurrency_benchmark.go $TCP_CONCURRENCY_MAX localhost:9090 > /tmp/tcp_concurrency_result.txt 2>&1
 
