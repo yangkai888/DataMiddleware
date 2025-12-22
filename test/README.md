@@ -13,7 +13,7 @@ test/
 │   └── tcp_qps_benchmark.go      # TCP QPS极限基准测试
 ├── concurrency/          # 并发测试
 │   ├── http_concurrency_test.go  # HTTP并发连接极限测试
-│   └── tcp_concurrency_test.go   # TCP并发连接极限测试
+│   └── tcp_concurrency_benchmark.go # TCP并发连接极限测试
 ├── run_http_performance_tests.sh # HTTP性能测试统一运行脚本
 ├── run_tcp_performance_tests.sh  # TCP性能测试统一运行脚本
 ├── README.md              # 本指南
@@ -202,10 +202,10 @@ go run test/benchmarks/tcp_qps_benchmark.go 200 localhost:9090 60 4097
 #### 使用方法
 ```bash
 # 基本用法 - 测试到5000并发连接
-go run test/concurrency/tcp_concurrency_test.go 5000
+go run test/concurrency/tcp_concurrency_benchmark.go 5000
 
 # 指定目标TCP地址
-go run test/concurrency/tcp_concurrency_test.go 1000 localhost:9090
+go run test/concurrency/tcp_concurrency_benchmark.go 1000 localhost:9090
 
 # 参数说明
 # 第一个参数: 最大并发连接数

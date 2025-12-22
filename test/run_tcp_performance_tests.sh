@@ -235,7 +235,7 @@ test_tcp_concurrency_limit() {
     log_test "运行TCP并发连接极限测试..."
 
     # 使用Go TCP并发测试
-    go run test/concurrency/tcp_concurrency_test.go $TCP_CONCURRENCY_MAX localhost:9090 > /tmp/tcp_concurrency_result.txt 2>&1
+    go run test/concurrency/tcp_concurrency_benchmark.go $TCP_CONCURRENCY_MAX localhost:9090 > /tmp/tcp_concurrency_result.txt 2>&1
 
     # 解析结果
     local successful=$(grep "成功请求数:" /tmp/tcp_concurrency_result.txt | awk '{print $2}' | tr -d ',')
